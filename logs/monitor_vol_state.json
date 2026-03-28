@@ -1,0 +1,502 @@
+{
+  "0xda08a8f0330fef7c19dd7f9f355c3f19eb588bf8582835dc69c1bdbabc6e02c6": {
+    "vol": 999.6095589999999,
+    "question": "Will Tesla (TSLA) close above $440 end of March?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x92410744b32432595f784c83740ecef014ff508e8c56c8152405c6d64880ac00": {
+    "vol": 9995.083898000003,
+    "question": "Will the Fed Pause\u2013Pause\u2013Cut in the next three decisions (Mar\u2013Apr\u2013Jun)?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x6d42f35fb8ec10df618fef7f75f20c98d4173abe9fb9b5476cbf5644c74969d1": {
+    "vol": 999.1476350000002,
+    "question": "Will the highest temperature in Wellington be 14\u00b0C on March 29?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x6fa64a876063afa529249b98ee2f0050f2d4c52034f87d58ce58ec71bd0b034d": {
+    "vol": 998.2010739999998,
+    "question": "Will Alexander Volkanovski be ranked first in the UFC Pound-For-Pound Rankings a",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x9f53edeb9e43781228004bf444a2bcbc64dab80dc015be00ee56198efa06cdbc": {
+    "vol": 998.116333,
+    "question": "Will Netflix (NFLX) finish week of March 23 above $70?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x3d61c9d321e41dd111b2a17944f200eb2a55a86c9031c59dbf0cc546f7ee06dc": {
+    "vol": 997.806943,
+    "question": "Will Crude Oil (CL) settle over $52 on the final trading day of June 2026?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x404076fc9fc580c6766d9f434a847fbb750197d0da8340e36b845cf05494610a": {
+    "vol": 9978.028606,
+    "question": "Will Lithuania be in the top 10 at Eurovision 2026?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x1adcdb049a0dacc8c5a0e5990ce7095f0afadfd7d157ac05d2d3c44842467dff": {
+    "vol": 997.7180999999998,
+    "question": "Will T.J. Parker be the second pick in the 2026 NFL draft?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x6c4b633bbed9af6c4ea1bdc1796a61fd901e438db73f98ec87452b01536d58e7": {
+    "vol": 99.72840999999998,
+    "question": "Will NYC Mayor post 80-99 posts from March 27 to April 3, 2026?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x60ec73dedf897f7e3d5cdb9c936ef95b518308048710b121b1d78b1faf8b6624": {
+    "vol": 997.280472,
+    "question": "Will Andrey Rublev win the 2026 Men's US Open?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x8a922759220e801aac1b9e5d743d9bdaec1f5d2fb27ca1f765aa18a54720fd95": {
+    "vol": 99.70285600000001,
+    "question": "Counter-Strike: Wildcard vs NOMERCY (BO1) - Roman Imperium Cup Group A",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x6b4b89bb3bfeadcacfd1c256e75dc01e41589c4427387c7114ae6508fbc0e02b": {
+    "vol": 99693.23107600001,
+    "question": "Will Robert Jenrick be the next Prime Minister of the United Kingdom in 2026?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xcec1e95220332a7f39c9e27970f13f303d6a61caa8fa208962dc2879aa5c7ef7": {
+    "vol": 99.675923,
+    "question": "Spread: Raptors (-7.5)",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x0be1f90665f3c5744df78d424d29100ad65d01c28bfb2412ca1942de470e129b": {
+    "vol": 996.644272,
+    "question": "Will the highest temperature in Atlanta be between 60-61\u00b0F on March 28?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xe76033ac6195e1a999a49e67843c9ec99821d2ef14bff5e9891016a30423a87e": {
+    "vol": 996.4992600000002,
+    "question": "Will Amazon (AMZN) close at $200-$205 on the final day of trading of the week of",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x725982c37ddaa59021493b72d51d68096c74a54ee5775488931ed0f57a5c35af": {
+    "vol": 995.8155529999999,
+    "question": "Will Paulo Dybala be the top goal scorer in the 2025-26 Serie A season?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x05b4a673be91a84ba0b90558d1f97d61473ca88ec58b4f1a1b11fde1cc8d7d6a": {
+    "vol": 995.742075,
+    "question": "Will Kirk Cousins play for Carolina Panthers in 2026-27?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x0b210109bee7512a6a6f3bc9ca217b5ceff1d38cebbe597eb0892b32050389c9": {
+    "vol": 99550.43378999994,
+    "question": "Will Spain join the Board of Peace?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x5eb41992936d1d364f705c4b795929054d9180205c65f74fe3e346363c6bf212": {
+    "vol": 9948.419343999994,
+    "question": "Will no listed leader be out before 2027?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x9bbc2ed1b78a56b5e8255354e1c9854037ae4930b3c45ff49b6332435ce9f7e7": {
+    "vol": 99466.90245900002,
+    "question": "Will OpenAI have the top AI model at the end of March 2026?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xc4b07998e8f9bf6b95f079d6dc0529f3c6f59698d4e168817ad5f99304de6c57": {
+    "vol": 99443.43371999996,
+    "question": "Will Spider-Man: Brand New Day be the top grossing movie of 2026?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x4405c62496c4fdd275d17ec31567a01534013c518c314ce61bb633b5e7cb6426": {
+    "vol": 9943776.437572023,
+    "question": "Will the Toronto Raptors win the 2026 NBA Finals?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x69b487d37257e1ce1686862f736b6432c8fca8eebc717fdaae8466e6f3a4779e": {
+    "vol": 9936.489195999993,
+    "question": "Will Alibaba have the #2 AI model at the end of March 2026?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x184e4a8f7cae608a3a54505dd2c075a9f59c1fdb8150c87195a6f586185efd7c": {
+    "vol": 99344.415342,
+    "question": "Will Larry Page be richest person on December 31?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x4cd373cd35f29c39a4fb45b7c31f8619d142aec0b4f863245510d1b3169c5502": {
+    "vol": 993367.1781210034,
+    "question": "Fact Check: Maduro capture staged?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x736c6ee8646407a815d7fe30cf857c58b10733785c46ccd9cad8b7526cb69d57": {
+    "vol": 9931.552356,
+    "question": "Will Trump talk to Mojtaba Khamenei by April 30?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x2bf80d93be42dac6c1b03298b5ec329a4b9f87b689c7892d544d1029f3a0caf0": {
+    "vol": 993027.2325360024,
+    "question": "Will Cl\u00e9mentine Autain win the 2027 French presidential election?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x979ad1046376040dc85bfaadd29cc9b890f3ca2e6fbbb3081969f8dbae3568c6": {
+    "vol": 99299.28131100013,
+    "question": "Will Forsen beat xQc's Minecraft speedrun record by March 31?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xcc040621c71849c7cab981231123475130a4f029e74f3b20ba134e47c4d42fea": {
+    "vol": 99.29538,
+    "question": "Games Total: O/U 2.5",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xc310e17d69370c9af7e9546d857e674f15f63c9b7b04bca61efa92e4bfdea3bb": {
+    "vol": 99266.70775300001,
+    "question": "Will the price of Bitcoin be above $58,000 on March 29?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x4795571ed1c6992ca07b6d34853d07d07ef4977b892660b4205cd2f3752c4826": {
+    "vol": 9925.720946999987,
+    "question": "Will Portugal win Group K in the 2026 FIFA World Cup?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x138c8f644e5730c2e4c1f408552babf2b695b9799b213f252cfa2554d0709b71": {
+    "vol": 99228.59537499993,
+    "question": "Will Anthropic\u2019s market cap be between $200B and $300B at market close on IPO da",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xe4da7b5f903a97b938de1637a746445ee559463190a1d61cb5af802c53dec19e": {
+    "vol": 992.1288,
+    "question": "Will Harris English win the 2026 Texas Children's Houston Open?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x2cbdc6e107a3e74d5116e7cc8b106ee3b72c50a4eba4de818d9c7e835e1acf1d": {
+    "vol": 9.92,
+    "question": "Solana Up or Down - March 27, 5:00PM-5:15PM ET",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xa0cbfb6ac0533bd05a1ab1480ca34ed76c91090b64d44a75df821fb87e68d312": {
+    "vol": 9.92,
+    "question": "Ethereum Up or Down - March 27, 4:45PM-5:00PM ET",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x27898613583beaa7cefc6b7ccb4f1146eee4ebc1b8611947ca3236d5603cac34": {
+    "vol": 9.92,
+    "question": "XRP Up or Down - March 27, 4:45PM-5:00PM ET",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xb0dc5e867e99141b7c795625d70fda6f25c346995e980d514b3f575f4daf3d3d": {
+    "vol": 9.92,
+    "question": "Solana Up or Down - March 27, 4:45PM-5:00PM ET",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xc24b90284378cb79721d72e052f22910d3e2e8049d85b78134a7e2e410df8bed": {
+    "vol": 9.92,
+    "question": "Ethereum Up or Down - March 27, 5:00PM-5:15PM ET",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x7bde5c98612f05e3eff7be95f1d35f73636ecda54d6be805b1d4ca40ab97afb3": {
+    "vol": 9.92,
+    "question": "Bitcoin Up or Down - March 27, 4:40AM-4:45AM ET",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x8de7e2d34a91db9ef051b4505accf8a42e848cd19668c11ee8ce06f9eaa06b3c": {
+    "vol": 9.92,
+    "question": "Solana Up or Down - March 27, 4:55AM-5:00AM ET",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xc3e5d7b943b36976cc5112a2bb0448391b8f286d6928aa277227e681bfe4e7de": {
+    "vol": 9.92,
+    "question": "Bitcoin Up or Down - March 27, 4:35AM-4:40AM ET",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x6bac763fbe3a5e8d280ad3b7eab4feb7f39909c9dc1bf5ab78e6170d91ebbb13": {
+    "vol": 9.92,
+    "question": "Ethereum Up or Down - March 27, 10:55AM-11:00AM ET",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x8b5faa0eee846789867579d8966faefcfacbd93f48f79c65b901ba93571b9f47": {
+    "vol": 9.92,
+    "question": "Bitcoin Up or Down - March 27, 5:05AM-5:10AM ET",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x3283dbeda4522e2538cee480bab8c1842db5268f15fe54126cb16730f231c516": {
+    "vol": 9.92,
+    "question": "Will FC K\u00f8benhavn vs. Silkeborg IF end in a draw?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xd93366079fab7bcb8a03705969822056b76226a48fd5bb7b1475a5b186cf6f07": {
+    "vol": 99175.08235299989,
+    "question": "Will the 2026 Midterm Elections happen as scheduled?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x2f192633e50bdfca9343469c53270cadf202be5967e8e72f84b6b86fceab3821": {
+    "vol": 991.708782,
+    "question": "Will S&P 500 (SPX) hit 5200 (LOW) in March?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x8c23257067f2748b07444b7df3bd3418d97d27fa2ade495c83283ae0798c9b8a": {
+    "vol": 99158.696451,
+    "question": "Will Bayern Munich finish in the top 4 of the Bundesliga 2025\u201326 standings?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xc0c8ad736b87421c483d1683b8d83cbdd09ee54205a622a6033046c49f890010": {
+    "vol": 991.3736560000001,
+    "question": "Will Trump say \"Iowa\" during National Agriculture Day events?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x6a07dfa017ff96c5502d8c2e64cb00b0bdeb8a8426eccae80f2a64e06366ffdd": {
+    "vol": 9907.88357,
+    "question": "Will Rihanna release an album in 2026?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x1706d30e9f54596166eefff3ab33c47ac96143501554f4029e08d15b7b1dc8ac": {
+    "vol": 9905.436253000007,
+    "question": "Will \"Man I Need - Olivia Dean\" be the #1 song on Spotify this week?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xc2030462965012469bf57a58466326a21b3a58311d7f9c3f9d67ddf007014d19": {
+    "vol": 9.900783,
+    "question": "Total Kills Over/Under 44.5 in Game 1?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x1a704c305dcbb55b04ee9ff0992e133b39dbdd5f9af152c81654a0ea0e3f63ba": {
+    "vol": 989.949841,
+    "question": "Dota 2: Team Yandex vs Tundra Esports (BO3) - ESL One Birmingham Playoffs",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x1e294cc44c55c1a48ce111f3e415ed085c91e12c7a988522850124bb1deca6a5": {
+    "vol": 989.8956379999997,
+    "question": "Will the highest temperature in Ankara be 9\u00b0C on March 28?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xfc52ab072784febab7beed22f6414bbee81f7f3991e9e07967295e510a784596": {
+    "vol": 9897.277016000005,
+    "question": "Will Conor McGregor fight Paddy Pimblett next?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x477f0c4fe5b0a8636a305f23e7f4167605b64ccdf1057923af2afec69f4434d3": {
+    "vol": 98964.67988,
+    "question": "Will MrBeast's next video get less than 76 million views on day 6?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x82dabcd03f63b80bb0032298e710a3645e0417bdf89db5a069918a40cfe3df4a": {
+    "vol": 98955.01481800005,
+    "question": "Another US bank failure by March 31?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x9a2858b631f9ad3526959bddc4986cb3c3403b654a14fa64ecd6551cb59eaba4": {
+    "vol": 989.447083,
+    "question": "Will NVIDIA (NVDA) close at $160-$165 on the final day of trading of the week of",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x419b075f829b37c9e5bfb5232a6f7d4ee82bb9d5aa4b6c8989e5994bd95cf66f": {
+    "vol": 98941.57562899998,
+    "question": "Will Crude Oil (CL) settle at <$60 in March?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x8294f5eaebd9699d10c62965a17015b6b59bb2a5dfe96063e17b7125885c2499": {
+    "vol": 989.2795050000001,
+    "question": "Will Dan Goldman be the Democratic nominee for NY-10?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x388459f1cfd0d310154e13f16f49d31fd301e5e3502072c8b09d3a0697b2823f": {
+    "vol": 98927.5935409998,
+    "question": "OpenAI receives federal backstop for infrastructure before July?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xc9d28aea3f0f51dd436b039cf63160f4d49d24c61bb4f39fce2472f7fafb5e4f": {
+    "vol": 989.2515270000001,
+    "question": "Will the highest temperature in Chicago be between 44-45\u00b0F on March 28?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x9b3d320db3c4d095ca3feb7dce35f9bba3e4bae92a8c654bb7722ac2d9673456": {
+    "vol": 989.04,
+    "question": "Will Jeff Yan appear on the UpOnly podcast by December 31?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x85c9a75d0232f21673b466f662271dedfd2e36d6f68138ec02cf350574164291": {
+    "vol": 9889.509109000002,
+    "question": "Will the price of Bitcoin be above $68,000 on March 31?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x9878bd1b29c17261b0aa08c482b8a9040077334fb1a82236bb341823e4c27eb8": {
+    "vol": 988.8532420000003,
+    "question": "Will the highest temperature in Seoul be 8\u00b0C on March 29?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xfd400a600d2344802c8d2bd19bd837e94e7dae1d37a1057254442d8a3db0936c": {
+    "vol": 988.7506660000001,
+    "question": "Will FC Dallas win the 2026 MLS Cup?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x3e38887e936b8fedd5373852777e7a3e90805affd8139971ebeb4b4956f000f5": {
+    "vol": 988176.4305519981,
+    "question": "Will the Boston Red Sox win the 2026 World Series?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x56a64fe9092457dd13b7a99083695e1d1cd0088b3ae562ceece4ae1911aa3c46": {
+    "vol": 988.133249,
+    "question": "Will Chicago Fire FC win the 2026 MLS Cup?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xb733beea0b3e59491361d08c9006ac2600096bc3a7b6c6168c453c2ba7ac99af": {
+    "vol": 987.9685000000001,
+    "question": "Will Google (GOOGL) finish week of March 23 above $335?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x745bad0ff4724aab8a5e52ce4fe1558a493fb248a679b51f54bbe21923979f02": {
+    "vol": 98794.08690000004,
+    "question": "Will Paramount close Warner Bros. acquisition by end of 2026?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xc0a0205cecd8200de2543546ace856a8fcd2f589d6c9f745604b3f27ff533e91": {
+    "vol": 987.0575270000004,
+    "question": "Will the highest temperature in Madrid be 22\u00b0C on March 28?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x331019deef3c1f235ae5463f8239d0b4474667969dcc005817caefd997daab54": {
+    "vol": 9868.010144999995,
+    "question": "Will Russia capture Sofiivka by April 30?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x67d776d116e6ea35eec6c8dcc0d0eb4eaf68503ed25950dc42f1c0fe1bf3b373": {
+    "vol": 9865.772811999997,
+    "question": "Will the price of Bitcoin be above $76,000 on March 31?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xb0d7fc2e64bff9a0806968988e7bd16f32fc8d9b0561a7cf8b77d6e85f70fdfe": {
+    "vol": 98647.79496700007,
+    "question": "Will Elon Musk post 240+ tweets from March 26 to March 28, 2026?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xb77f3959b1474d4a086199807c476947461ade64a1b19ce30646c91a78449891": {
+    "vol": 98642.79092299996,
+    "question": "Will Al Carns be the next Prime Minister of the United Kingdom in 2026?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x3875dde773fce318b55379656a0bd282d9b2390376bca0c1c8034cbcf3bc1758": {
+    "vol": 986.309096,
+    "question": "Will Miles McBride win the 2025\u20132026 NBA Sixth Man of the Year?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x1586e33dc57b17433d080829870d73631a146b24d44d73817634c9f7171f84c3": {
+    "vol": 9861.788065000002,
+    "question": "Will Rashida Tlaib win the 2026 Michigan Democratic Primary?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xa7a45aafa4daaf123f679a759d077970c982ac96612c8d0b7138464fabc25192": {
+    "vol": 9859.139518000002,
+    "question": "Will Ethena dip to $0.04 in March?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x41926ffc646ce88596c03f7c89c21e53db51769611dd161a8074b06577c9ea76": {
+    "vol": 985.3653149999999,
+    "question": "Will Matt Carroll win The Bachelorette Season 22?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xfafd078f403f65a51e71a64f668c7f9262cb207788c7bf72951df27cd2013661": {
+    "vol": 9853.137341999998,
+    "question": "Will Russia enter Novyi Donbas by April 30?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xbd604932da0243ae9ad2ed783eff309f91b02b39e0e9abb4769854b5dcbdf41d": {
+    "vol": 985.297231,
+    "question": "Will Emanuel Emegha be the top goal scorer in the 2025-26 Ligue 1 season?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x9235d5271d28f633af011e0e56e763aa33c70f8e5f875fd6ae01e44cb69150e0": {
+    "vol": 985.15118,
+    "question": "Spread: CD Mirand\u00e9s (-1.5)",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x1adf074e048fa613f4ddbc0766088748a48d120a3a713b0183e219032a411ae3": {
+    "vol": 984894.2399960463,
+    "question": "Will 11 Fed rate cuts happen in 2026?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xca9f1ee7e379f918aaaf141edc79cb3a43d1c8b25edc29a8b2df207b2d782f48": {
+    "vol": 98477.70227300003,
+    "question": "Will Immanuel Quickley lead the NBA in assists during the 2025\u201326 NBA season?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x1f9767f0b627eee12dd816c07a745c968807dae4cce336b8a2cb66d28cd3607c": {
+    "vol": 98463.49206100077,
+    "question": "Maduro guilty of all counts?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xd7e8fb4779bb6e5cc7127d448718c5bd7e3f02571fb391d9d7cca25273dcf4cc": {
+    "vol": 9837.574695000003,
+    "question": "Will NVIDIA reach $208 in March?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xe8b151adeb89150894c3b130f110f89dcc195e3af3bfe8cf2af832786d528ddf": {
+    "vol": 98334.120315,
+    "question": "Will Trae Young lead the NBA in assists during the 2025\u201326 NBA season?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x1c36595d8a1726549acca61c5eb8c9173de87c780ee1cee660ceb5b517530ab7": {
+    "vol": 983269.9110910019,
+    "question": "Will the St. Louis Blues win the 2026 NHL Stanley Cup?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x9f6c180ed79bccf08b3d58d23c6af3a87afd4d0b176e770c6951a573dcaee814": {
+    "vol": 98262.34271299996,
+    "question": "Will Alexander Zverev be the 2026 Men\u2019s Wimbledon winner?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xee750bd26de9003d961831ce71a6c4da0e0deb60c469d08bfe1730fc4250f800": {
+    "vol": 982.2228569999999,
+    "question": "Will \"Lemon Pound Cake - Afroman\" be the #1 song on US Spotify this week?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x675bba4df50fd123f7fbfbafa67e9b75f4092d85ce0f9148ce78fc945964c856": {
+    "vol": 9821536.894444369,
+    "question": "Will Paraguay win the 2026 FIFA World Cup?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x1a1346d763389455dac46a51e20c4cc25aecef5323f1701a440cc11d4c3f129e": {
+    "vol": 981690.8726560002,
+    "question": "Putin out as President of Russia by June 30?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x40d85bb0c07156d8078ed03df11bea9aff0c6700a5186c9848307f00503b2060": {
+    "vol": 9814.180279999995,
+    "question": "Will Jakub Mensik win the 2026 Men's French Open?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x4773e5a8e378908a30b49566a748ca88eff61c86e20008e3e4bc1595b9d00187": {
+    "vol": 98111.87648999995,
+    "question": "Will Bitcoin reach $80,000 March 23-29?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xa813a31c1a1bf58a59f42cded0c121de21c63aa4ae0132f7a15ce95d8974076b": {
+    "vol": 9809.888606000002,
+    "question": "Will SpaceX\u2019s IPO valuation be less than 1.25T?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x59953f502d00b1f6f666d7f884361e96cd1c829a9ee62e7d0e30e0fb0555a959": {
+    "vol": 98.039214,
+    "question": "Bitcoin Up or Down - March 27, 3:55AM-4:00AM ET",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x2c30b81444bac352bfd71c06205cc3d5566bd8fb3dce9b0cffeb0273c4ff2027": {
+    "vol": 9.80392,
+    "question": "Spread: Bayer 04 Leverkusen (-1.5)",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x2a6d2cb5250e55c9c910e2ce005cc67d956973fbffe9b69539fb4ab58383cc59": {
+    "vol": 98029.97748100002,
+    "question": "European country agrees to give Ukraine security guarantee by June 30? ",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x1f10b1f557ab254487c22a6b7cd4b4a3b14e561c0017bc6fc58bb81f306ad558": {
+    "vol": 980.1273779999999,
+    "question": "Will the 10-year Treasury yield hit 5.5% before 2027?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0xd464ac495334e10adf540081ff241fe24ea08590af7ec2bd2f2b6293dc899481": {
+    "vol": 98.004715,
+    "question": "Spread: Sabres (-1.5)",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  },
+  "0x6c56930693777443c84bc172003442d9e317476fdcf59c9b26a60034001d9c19": {
+    "vol": 980041.1144440002,
+    "question": "Will Ethereum reach $2,600 in March?",
+    "ts": "2026-03-27T06:24:11.543639+00:00"
+  }
+}

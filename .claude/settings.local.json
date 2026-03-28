@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python vault_generator.py)",
+      "Bash(pip show:*)",
+      "Bash(pip install:*)",
+      "Bash(python test_login.py)"
+    ]
+  }
+}

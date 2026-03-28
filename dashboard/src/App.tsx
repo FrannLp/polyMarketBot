@@ -1,0 +1,613 @@
+import { useEffect, useState, useCallback } from 'react'
+
+interface BotState {
+  balance: number; initial: number; total_pnl: number
+  total_bets: number; total_won: number; bets_today: number
+  loss_today: number; history: Bet[]
+}
+interface Bet {
+  timestamp: string; asset: string; side: string; price: number
+  edge: number; bet_size: number; status: 'PENDING' | 'WON' | 'LOST'
+  pnl: number | null; end_date: string | null; dry_run: boolean
+  question: string; market_id?: string
+}
+interface Market {
+  asset: string; question: string; price_up: number; price_down: number
+  volume: number; end_date: string | null
+}
+interface Account {
+  wallet: string; balance: number
+  trades: any[]; orders: any[]; positions: any[]
+}
+interface BotStatus {
+  running: boolean; pid: number | null
+  live: { running: boolean; pid: number | null }
+  sim:  { running: boolean; pid: number | null }
+}
+
+const fmt  = (n: number) => `$${Math.abs(n).toFixed(2)}`
+const sign = (n: number) => n >= 0 ? '+' : '-'
+
+function timeLeft(end_date: string | null): string {
+  if (!end_date) return '—'
+  const diff = new Date(end_date).getTime() - Date.now()
+  if (diff <= 0) return 'cerrado'
+  const m = Math.floor(diff / 60000), s = Math.floor((diff % 60000) / 1000)
+  return `${m}m ${s}s`
+}
+function formatTs(ts: string): string {
+  try { return new Date(ts).toLocaleString('es-MX', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }
+  catch { return ts.slice(0, 16) }
+}
+
+// ── Markets Table ─────────────────────────────────────────────────────────────
+function MarketsTable({ markets }: { markets: Market[] }) {
+  const latest = Object.values(
+    markets.reduce((acc, m) => { if (!acc[m.asset]) acc[m.asset] = m; return acc }, {} as Record<string, Market>)
+  )
+  return (
+    <div className="section">
+      <div className="section-title">Mercados 5min activos</div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Asset</th><th>UP</th><th>DOWN</th><th>Volumen</th><th>Cierra en</th><th>Mercado</th></tr></thead>
+          <tbody>
+            {latest.length === 0
+              ? <tr><td colSpan={6} className="loading">Sin mercados activos ahora mismo</td></tr>
+              : latest.map(m => (
+                <tr key={m.asset}>
+                  <td><strong>{m.asset}</strong></td>
+                  <td><span className={`pill ${m.price_up <= 0.55 ? 'pill-green' : 'pill-red'}`}>{m.price_up.toFixed(2)}</span></td>
+                  <td><span className={`pill ${m.price_down <= 0.55 ? 'pill-green' : 'pill-red'}`}>{m.price_down.toFixed(2)}</span></td>
+                  <td>${m.volume.toLocaleString()}</td>
+                  <td style={{ color: '#facc15' }}>{timeLeft(m.end_date)}</td>
+                  <td style={{ color: '#64748b', fontSize: 11 }}>{m.question.slice(0, 48)}...</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const ASSET_COLOR: Record<string, string> = {
+  BTC: '#f7931a', ETH: '#627eea', SOL: '#9945ff', XRP: '#00aae4',
+}
+function timeAgo(ts: string): string {
+  const diff = Date.now() - new Date(ts).getTime()
+  const m = Math.floor(diff / 60000)
+  const h = Math.floor(m / 60)
+  const d = Math.floor(h / 24)
+  if (d > 0) return `${d}d`
+  if (h > 0) return `${h}h ${m % 60}m`
+  return `${m}m`
+}
+
+// ── Tab Real ──────────────────────────────────────────────────────────────────
+function posStatus(p: any): 'WON' | 'LOST' | 'OPEN' {
+  const cp = typeof p.curPrice === 'number' ? p.curPrice : parseFloat(p.curPrice ?? '-1')
+  if (cp >= 0.99) return 'WON'
+  if (cp <= 0.01 && p.redeemable) return 'LOST'
+  return 'OPEN'
+}
+
+function TabReal({ account, markets, state }: { account: Account | null; markets: Market[]; state: BotState | null }) {
+  const [actPage, setActPage] = useState(0)
+  const PAGE_SIZE = 10
+
+  const bal = account?.balance ?? 0
+  const positions = account?.positions ?? []
+  const open = positions.filter(p => posStatus(p) === 'OPEN').length
+
+  // Win rate and PnL from REAL bets only (dry_run=false), resolved only
+  const realHistory  = (state?.history ?? []).filter(b => !b.dry_run)
+  const realResolved = realHistory.filter(b => b.status === 'WON' || b.status === 'LOST')
+  const totalBets = realResolved.length
+  const totalWon  = realResolved.filter(b => b.status === 'WON').length
+  const winRate   = totalBets > 0 ? Math.round((totalWon / totalBets) * 100) : null
+  const totalPnl  = realHistory.reduce((s, b) => s + (b.pnl ?? 0), 0)
+
+  return (
+    <>
+      <div className="cards">
+        <div className="card">
+          <div className="label">Balance Polymarket</div>
+          <div className="value yellow">{fmt(bal)}</div>
+          <div className="sub" style={{ fontSize: 10, wordBreak: 'break-all' }}>{account?.wallet?.slice(0, 22)}...</div>
+        </div>
+        <div className="card">
+          <div className="label">Win Rate (histórico)</div>
+          <div className={`value ${winRate === null ? '' : winRate >= 50 ? 'green' : 'red'}`}>
+            {winRate !== null ? `${winRate}%` : '—'}
+          </div>
+          <div className="sub">{totalWon} ganadas / {totalBets} totales</div>
+        </div>
+        <div className="card">
+          <div className="label">PnL total bot</div>
+          <div className={`value ${totalPnl >= 0 ? 'green' : 'red'}`}>
+            {totalPnl >= 0 ? '+' : ''}{fmt(totalPnl)}
+          </div>
+          <div className="sub">vs balance inicial</div>
+        </div>
+        <div className="card">
+          <div className="label">Posiciones activas</div>
+          <div className="value">{open}</div>
+          <div className="sub">mercados aún abiertos</div>
+        </div>
+      </div>
+
+      {bal === 0 && (
+        <div style={{ background: '#422006', border: '1px solid #f97316', borderRadius: 12, padding: 16, marginBottom: 16, color: '#fed7aa' }}>
+          ⚠ <strong>Balance en $0</strong> — Deposita USDC en polymarket.com → Deposit para operar.
+        </div>
+      )}
+
+      {/* ── Claim banner ── */}
+      {(() => {
+        const claimable = (account?.positions ?? []).filter((p: any) => p.redeemable && (p.currentValue ?? 0) > 0.01)
+        const totalClaim = claimable.reduce((s: number, p: any) => s + (p.currentValue ?? 0), 0)
+        if (claimable.length === 0) return null
+        return (
+          <div style={{ background: '#14532d', border: '1px solid #4ade80', borderRadius: 12, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <div style={{ color: '#4ade80', fontWeight: 700, fontSize: 16 }}>
+                🎉 Tienes <strong>${totalClaim.toFixed(2)}</strong> para reclamar en {claimable.length} posición{claimable.length > 1 ? 'es' : ''}
+              </div>
+              <div style={{ color: '#86efac', fontSize: 12, marginTop: 3 }}>
+                {claimable.map((p: any) => `${(p.title || '').slice(0, 30)}… +$${(p.currentValue ?? 0).toFixed(2)}`).join(' · ')}
+              </div>
+            </div>
+            <a href="https://polymarket.com/portfolio" target="_blank" rel="noreferrer"
+              style={{ background: '#4ade80', color: '#052e16', fontWeight: 700, fontSize: 13, padding: '8px 18px', borderRadius: 8, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
+              Reclamar →
+            </a>
+          </div>
+        )
+      })()}
+
+      {/* ── Activity feed ── */}
+      {(() => {
+        // Build flat items array newest-first
+        type AItem = { key: string; node: React.ReactNode; ts: number }
+        const items: AItem[] = []
+
+        // Open positions first (most recent)
+        ;(account?.positions ?? []).filter(p => posStatus(p) === 'OPEN').forEach((p: any, i: number) => {
+          const pOutcome = p.outcome || '?'
+          const isUp = pOutcome === 'Up'
+          const titleMatch = (p.title || '').match(/Bitcoin|Ethereum|Solana|XRP/i)?.[0] || ''
+          const assetKey = titleMatch.startsWith('Bit') ? 'BTC' : titleMatch.startsWith('Eth') ? 'ETH' : titleMatch.startsWith('Sol') ? 'SOL' : 'XRP'
+          const color = ASSET_COLOR[assetKey] ?? '#64748b'
+          const cents = Math.round((p.curPrice ?? 0) * 100)
+          items.push({ key: `pos-${i}`, ts: Date.now(), node: (
+            <div className="activity-row">
+              <div className="act-icon pending">⏳</div>
+              <div className="asset-icon" style={{ background: color }}>{assetKey[0]}</div>
+              <div className="act-info">
+                <div className="act-name">{(p.title || '?').slice(0, 60)}</div>
+                <div className="act-meta">
+                  <span className={`act-badge ${isUp ? 'up' : 'down'}`}>{isUp ? '▲' : '▼'} {isUp ? 'UP' : 'DOWN'} {cents}¢ actual</span>
+                  <span className="act-shares">{p.size} acciones</span>
+                </div>
+              </div>
+              <div className="act-right">
+                <div className="act-value neu">En curso</div>
+                <div className="act-time">abierto</div>
+              </div>
+            </div>
+          )})
+        })
+
+        // History bets newest-first (only real bets, not dry_run/simulation)
+        ;[...(state?.history ?? [])].filter(b => !b.dry_run).reverse().forEach((b, i) => {
+          const color  = ASSET_COLOR[b.asset] ?? '#64748b'
+          const isUp   = b.side === 'UP'
+          const cents  = Math.round((b.price ?? 0) * 100)
+          const shares = b.price > 0 ? (b.bet_size / b.price).toFixed(1) : '—'
+          const payout = b.pnl != null ? b.pnl + b.bet_size : b.bet_size / (b.price ?? 1)
+          const shortQ = (b.question || `${b.asset} Up or Down`).slice(0, 60)
+          const ts = new Date(b.timestamp).getTime()
+
+          if (b.status === 'WON') {
+            // Reclamado row first (more recent)
+            items.push({ key: `win-${i}`, ts: ts + 1, node: (
+              <div className="activity-row">
+                <div className="act-icon claimed">✓</div>
+                <div className="asset-icon" style={{ background: color }}>{b.asset[0]}</div>
+                <div className="act-info">
+                  <div className="act-name">{shortQ}</div>
+                  <div className="act-meta"><span className="act-badge up">Reclamado</span></div>
+                </div>
+                <div className="act-right">
+                  <div className="act-value pos">+{fmt(payout)}</div>
+                  <div className="act-time">{timeAgo(b.timestamp)}</div>
+                </div>
+              </div>
+            )})
+          }
+
+          const buyIcon = b.status === 'LOST' ? 'lost' : b.status === 'PENDING' ? 'pending' : 'bought'
+          const buySymbol = b.status === 'LOST' ? '✗' : '⊕'
+          items.push({ key: `buy-${i}`, ts, node: (
+            <div className="activity-row">
+              <div className={`act-icon ${buyIcon}`}>{buySymbol}</div>
+              <div className="asset-icon" style={{ background: color }}>{b.asset[0]}</div>
+              <div className="act-info">
+                <div className="act-name">{shortQ}</div>
+                <div className="act-meta">
+                  <span className={`act-badge ${isUp ? 'up' : 'down'}`}>{isUp ? '▲' : '▼'} {b.side} {cents}¢</span>
+                  <span className="act-shares">{shares} acciones</span>
+                </div>
+              </div>
+              <div className="act-right">
+                <div className={`act-value ${b.status === 'LOST' ? 'neg' : b.status === 'PENDING' ? 'neu' : 'neg'}`}>
+                  {b.status === 'PENDING' ? `−${fmt(b.bet_size ?? 0)}` : `-${fmt(b.bet_size ?? 0)}`}
+                </div>
+                <div className="act-time">{timeAgo(b.timestamp)}</div>
+              </div>
+            </div>
+          )})
+        })
+
+        // Add CLOB trades not already covered by state.history (e.g. manual test bets)
+        // Only show entries with a recognizable title (Bitcoin/Ethereum/Solana/XRP) to avoid
+        // confusing CLOB fill artifacts with inflated sizes from maker orders.
+        const stateMarkets = new Set((state?.history ?? []).map(b => b.market_id))
+        const seenClob     = new Set<string>()
+        ;(account?.trades ?? []).forEach((t: any) => {
+          if (stateMarkets.has(t.market)) return   // already in state
+          if (seenClob.has(t.market))    return   // deduplicate fills
+          seenClob.add(t.market)
+          // detect asset from title — skip if not a recognized market
+          const matchPos = (account?.positions ?? []).find((p: any) => p.conditionId === t.market)
+          const titleM   = (matchPos?.title || '').match(/Bitcoin|Ethereum|Solana|XRP/i)?.[0] || ''
+          if (!titleM) return  // skip unknown/hash-only markets
+          const outcome  = t.my_outcome || t.outcome || '?'
+          const isUp     = outcome === 'Up'
+          const side     = isUp ? 'UP' : 'DOWN'
+          const price    = parseFloat(t.price || '0')
+          const rawTs    = t.match_time || ''
+          const tsMs     = /^\d+$/.test(rawTs) ? parseInt(rawTs) * 1000 : Date.now()
+          const tsIso    = new Date(tsMs).toISOString()
+          const cents    = Math.round(price * 100)
+          // determine status from positions cross-reference
+          const st       = matchPos ? posStatus(matchPos) : null
+          const icon     = st === 'WON' ? 'claimed' : st === 'LOST' ? 'lost' : 'bought'
+          const symbol   = st === 'WON' ? '✓' : st === 'LOST' ? '✗' : '⊕'
+          const assetKey = titleM.startsWith('Bit') ? 'BTC' : titleM.startsWith('Eth') ? 'ETH' : titleM.startsWith('Sol') ? 'SOL' : 'XRP'
+          const color    = ASSET_COLOR[assetKey] ?? '#64748b'
+          const label    = matchPos?.title?.slice(0, 60) || t.market?.slice(0, 20)
+          items.push({ key: `clob-${t.market}`, ts: tsMs, node: (
+            <div className="activity-row">
+              <div className={`act-icon ${icon}`}>{symbol}</div>
+              <div className="asset-icon" style={{ background: color }}>{assetKey[0]}</div>
+              <div className="act-info">
+                <div className="act-name">{label}</div>
+                <div className="act-meta">
+                  <span className={`act-badge ${isUp ? 'up' : 'down'}`}>{isUp ? '▲' : '▼'} {side} {cents}¢</span>
+                </div>
+              </div>
+              <div className="act-right">
+                <div className={`act-value ${st === 'WON' ? 'pos' : 'neg'}`}>
+                  {st === 'WON' ? 'Ganado' : '—'}
+                </div>
+                <div className="act-time">{timeAgo(tsIso)}</div>
+              </div>
+            </div>
+          )})
+        })
+
+        // Sort newest first
+        items.sort((a, b) => b.ts - a.ts)
+
+        const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
+        const safePage   = Math.min(actPage, totalPages - 1)
+        const pageItems  = items.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
+
+        return (
+          <div className="section">
+            <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Actividad</span>
+              <span style={{ fontSize: 11, color: '#475569', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
+                {items.length} eventos · pág {safePage + 1}/{totalPages}
+              </span>
+            </div>
+            <div className="activity-feed">
+              {items.length === 0
+                ? <div className="loading">Sin actividad aún</div>
+                : pageItems.map((item, idx) => <div key={item.key + idx}>{item.node}</div>)
+              }
+            </div>
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 10 }}>
+                <button className="refresh-btn" onClick={() => setActPage(p => Math.max(0, p - 1))} disabled={safePage === 0}>← Anterior</button>
+                <button className="refresh-btn" onClick={() => setActPage(p => Math.min(totalPages - 1, p + 1))} disabled={safePage === totalPages - 1}>Siguiente →</button>
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      <MarketsTable markets={markets} />
+    </>
+  )
+}
+
+// ── Tab Simulación ────────────────────────────────────────────────────────────
+function TabSim({ state, markets }: { state: BotState | null; markets: Market[] }) {
+  const [actPage, setActPage] = useState(0)
+  const PAGE_SIZE = 10
+
+  if (!state) return <div className="loading">Sin datos del bot</div>
+
+  // Only simulation bets (dry_run=true)
+  const simHistory = state.history.filter(b => b.dry_run)
+  const simResolved  = simHistory.filter(b => b.status === 'WON' || b.status === 'LOST')
+  const simTotalBets = simResolved.length
+  const simTotalWon  = simResolved.filter(b => b.status === 'WON').length
+  const simTotalPnl  = simHistory.reduce((s, b) => s + (b.pnl ?? 0), 0)
+  const winRate   = simTotalBets > 0 ? Math.round((simTotalWon / simTotalBets) * 100) : null
+  const pnlColor  = simTotalPnl >= 0 ? 'green' : 'red'
+  const pctVsInit = state.initial > 0 ? (((state.balance - state.initial) / state.initial) * 100).toFixed(1) : '0'
+  const openBets  = simHistory.filter(b => b.status === 'PENDING').length
+
+  // Claim-style banner: profitable WON bets not yet "reclaimed"
+  const wonBets     = simHistory.filter(b => b.status === 'WON')
+  const totalWonPnl = wonBets.reduce((s, b) => s + (b.pnl ?? 0), 0)
+
+  // Build activity items (same shape as TabReal)
+  type AItem = { key: string; node: React.ReactNode; ts: number }
+  const items: AItem[] = []
+
+  ;[...simHistory].reverse().forEach((b, i) => {
+    const color   = ASSET_COLOR[b.asset] ?? '#64748b'
+    const isUp    = b.side === 'UP'
+    const cents   = Math.round((b.price ?? 0) * 100)
+    const shares  = b.price > 0 ? (b.bet_size / b.price).toFixed(1) : '—'
+    const payout  = b.pnl != null ? b.pnl + b.bet_size : b.bet_size / (b.price ?? 1)
+    const shortQ  = (b.question || `${b.asset} Up or Down in 5min`).slice(0, 60)
+    const shortId = b.market_id ? b.market_id.slice(0, 12) + '…' : `SIM-${b.asset}-${i}`
+    const ts      = new Date(b.timestamp).getTime()
+
+    const icon   = b.status === 'WON' ? 'claimed' : b.status === 'LOST' ? 'lost' : 'pending'
+    const symbol = b.status === 'WON' ? '✓' : b.status === 'LOST' ? '✗' : '⏳'
+    const valueNode = b.status === 'WON'
+      ? <div className="act-value pos">+{fmt(payout)}</div>
+      : b.status === 'PENDING'
+        ? <div className="act-value neu">En curso</div>
+        : <div className="act-value neg">-{fmt(b.bet_size ?? 0)}</div>
+    const metaExtra = b.status === 'PENDING'
+      ? <span className="act-shares">{shares} acciones · {timeLeft(b.end_date)}</span>
+      : <span className="act-shares">{shares} acciones · edge {b.edge ? `${(b.edge * 100).toFixed(1)}%` : '—'}</span>
+
+    items.push({ key: `sim-${i}`, ts, node: (
+      <div className="activity-row">
+        <div className={`act-icon ${icon}`}>{symbol}</div>
+        <div className="asset-icon" style={{ background: color }}>{b.asset[0]}</div>
+        <div className="act-info">
+          <div className="act-name">{shortQ}</div>
+          <div className="act-meta">
+            <span className={`act-badge ${isUp ? 'up' : 'down'}`}>{isUp ? '▲' : '▼'} {b.side} {cents}¢</span>
+            {metaExtra}
+          </div>
+        </div>
+        <div className="act-right">
+          {valueNode}
+          <div className="act-time">{timeAgo(b.timestamp)}</div>
+        </div>
+      </div>
+    )})
+  })
+
+  items.sort((a, b) => b.ts - a.ts)
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
+  const safePage   = Math.min(actPage, totalPages - 1)
+  const pageItems  = items.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
+
+  return (
+    <>
+      {/* ── Cards ── */}
+      <div className="cards">
+        <div className="card">
+          <div className="label">Balance Simulado</div>
+          <div className="value yellow">{fmt(state.balance)}</div>
+          <div className="sub">Inicial: {fmt(state.initial)} · {pctVsInit}%</div>
+        </div>
+        <div className="card">
+          <div className="label">Win Rate (simulado)</div>
+          <div className={`value ${winRate === null ? '' : winRate >= 50 ? 'green' : 'red'}`}>
+            {winRate !== null ? `${winRate}%` : '—'}
+          </div>
+          <div className="sub">{simTotalWon} ganadas / {simTotalBets} totales</div>
+        </div>
+        <div className="card">
+          <div className="label">PnL total bot</div>
+          <div className={`value ${pnlColor}`}>
+            {simTotalPnl >= 0 ? '+' : ''}{fmt(simTotalPnl)}
+          </div>
+          <div className="sub">vs balance inicial</div>
+        </div>
+        <div className="card">
+          <div className="label">Posiciones abiertas</div>
+          <div className="value">{openBets}</div>
+          <div className="sub">Hoy: {state.bets_today}/20 · stop ${state.loss_today.toFixed(2)}</div>
+        </div>
+      </div>
+
+      {/* ── "Reclaim" banner para ganadas ── */}
+      {wonBets.length > 0 && (
+        <div style={{ background: '#14532d', border: '1px solid #4ade80', borderRadius: 12, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ color: '#4ade80', fontWeight: 700, fontSize: 16 }}>
+              Ganaste <strong>{fmt(totalWonPnl)}</strong> en {wonBets.length} apuesta{wonBets.length > 1 ? 's' : ''} simulada{wonBets.length > 1 ? 's' : ''}
+            </div>
+            <div style={{ color: '#86efac', fontSize: 12, marginTop: 3 }}>
+              {wonBets.slice(0, 3).map(b => `${b.asset} ${b.side} +${fmt(b.pnl ?? 0)}`).join(' · ')}{wonBets.length > 3 ? ` · +${wonBets.length - 3} más` : ''}
+            </div>
+          </div>
+          <div style={{ background: '#4ade80', color: '#052e16', fontWeight: 700, fontSize: 13, padding: '8px 18px', borderRadius: 8, whiteSpace: 'nowrap', flexShrink: 0 }}>
+            SIM — no real
+          </div>
+        </div>
+      )}
+
+      {/* ── Activity feed ── */}
+      <div className="section">
+        <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Actividad (Simulación)</span>
+          <span style={{ fontSize: 11, color: '#475569', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
+            {items.length} eventos · pág {safePage + 1}/{totalPages}
+          </span>
+        </div>
+        <div className="activity-feed">
+          {items.length === 0
+            ? <div className="loading">Sin apuestas aún — esperando señal con edge &gt;= 8%</div>
+            : pageItems.map((item, idx) => <div key={item.key + idx}>{item.node}</div>)
+          }
+        </div>
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 10 }}>
+            <button className="refresh-btn" onClick={() => setActPage(p => Math.max(0, p - 1))} disabled={safePage === 0}>← Anterior</button>
+            <button className="refresh-btn" onClick={() => setActPage(p => Math.min(totalPages - 1, p + 1))} disabled={safePage === totalPages - 1}>Siguiente →</button>
+          </div>
+        )}
+      </div>
+
+      <MarketsTable markets={markets} />
+    </>
+  )
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+export default function App() {
+  const [tab,        setTab]       = useState<'real' | 'sim'>('real')
+  const [state,      setState]     = useState<BotState | null>(null)
+  const [markets,    setMarkets]   = useState<Market[]>([])
+  const [account,    setAccount]   = useState<Account | null>(null)
+  const [botStatus,  setBotStatus] = useState<BotStatus>({ running: false, pid: null, live: { running: false, pid: null }, sim: { running: false, pid: null } })
+  const [lastSync,   setLastSync]  = useState('')
+  const [loading,    setLoading]   = useState(true)
+  const [refreshing, setRefreshing]= useState(false)
+  const [togglingLive, setTogglingLive] = useState(false)
+  const [togglingSim,  setTogglingSim]  = useState(false)
+  const [killingAll,   setKillingAll]   = useState(false)
+
+  const fetchAll = useCallback(async (manual = false) => {
+    if (manual) setRefreshing(true)
+    try {
+      const [s, m, a, bs] = await Promise.all([
+        fetch('/api/state').then(r => r.json()),
+        fetch('/api/markets').then(r => r.json()),
+        fetch('/api/account').then(r => r.json()),
+        fetch('/api/bot/status').then(r => r.json()),
+      ])
+      setState(s); setMarkets(Array.isArray(m) ? m : [])
+      setAccount(a); setBotStatus(bs)
+      setLastSync(new Date().toLocaleTimeString('es-MX'))
+    } catch (e) { console.error(e) }
+    finally { setLoading(false); setRefreshing(false) }
+  }, [])
+
+  const toggleLive = async () => {
+    setTogglingLive(true)
+    try {
+      const action = botStatus.live?.running ? 'stop' : 'start'
+      const r = await fetch(`/api/bot/${action}`, { method: 'POST' })
+      const d = await r.json()
+      if (!d.ok) alert(d.msg)
+      await fetchAll()
+    } catch (e) { console.error(e) }
+    finally { setTogglingLive(false) }
+  }
+
+  const toggleSim = async () => {
+    setTogglingSim(true)
+    try {
+      const action = botStatus.sim?.running ? 'stop-sim' : 'start-sim'
+      const r = await fetch(`/api/bot/${action}`, { method: 'POST' })
+      const d = await r.json()
+      if (!d.ok) alert(d.msg)
+      await fetchAll()
+    } catch (e) { console.error(e) }
+    finally { setTogglingSim(false) }
+  }
+
+  const killAll = async () => {
+    if (!confirm('¿Detener todos los bots y resetear límites diarios?')) return
+    setKillingAll(true)
+    try {
+      const r = await fetch('/api/bot/kill-all', { method: 'POST' })
+      const d = await r.json()
+      alert(d.msg)
+      await fetchAll()
+    } catch (e) { console.error(e) }
+    finally { setKillingAll(false) }
+  }
+
+  useEffect(() => {
+    fetchAll()
+    const id = setInterval(() => fetchAll(), 30_000)
+    return () => clearInterval(id)
+  }, [fetchAll])
+
+  if (loading) return <div className="loading" style={{ paddingTop: 80, fontSize: 16 }}>Cargando dashboard...</div>
+
+  return (
+    <div className="app">
+
+      {/* ── Header ── */}
+      <div className="header">
+        <h1>Poly<span>Market</span> Bot</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="refresh-info">Sync: {lastSync} · auto 30s</span>
+          <button className="refresh-btn" onClick={() => fetchAll(true)} disabled={refreshing}>
+            {refreshing ? '⟳ ...' : '⟳ Actualizar'}
+          </button>
+          <button
+            className={`bot-toggle ${botStatus.sim?.running ? 'bot-sim-on' : 'bot-sim-off'}`}
+            onClick={toggleSim}
+            disabled={togglingSim}
+            title={botStatus.sim?.running ? `SIM corriendo (PID ${botStatus.sim.pid})` : 'Iniciar bot simulación'}
+          >
+            {togglingSim ? '...' : botStatus.sim?.running ? `⏹ SIM (PID ${botStatus.sim.pid})` : '▶ Iniciar SIM'}
+          </button>
+          <button
+            className={`bot-toggle ${botStatus.live?.running ? 'bot-on' : 'bot-off'}`}
+            onClick={toggleLive}
+            disabled={togglingLive}
+            title={botStatus.live?.running ? `LIVE corriendo (PID ${botStatus.live.pid})` : 'Iniciar bot LIVE con dinero real'}
+          >
+            {togglingLive ? '...' : botStatus.live?.running ? `⏹ LIVE (PID ${botStatus.live.pid})` : '▶ Iniciar Bot LIVE'}
+          </button>
+          <button
+            className="bot-toggle bot-kill"
+            onClick={killAll}
+            disabled={killingAll}
+            title="Detener todos los bots y resetear límite diario"
+          >
+            {killingAll ? '...' : '⏏ Reset'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Tabs ── */}
+      <div className="tabs">
+        <button className={`tab-btn ${tab === 'real' ? 'active-real' : ''}`} onClick={() => setTab('real')}>
+          🟢 Polymarket Real
+        </button>
+        <button className={`tab-btn ${tab === 'sim'  ? 'active-sim'  : ''}`} onClick={() => setTab('sim')}>
+          🟡 Simulación
+        </button>
+      </div>
+
+      {tab === 'real' && <TabReal account={account} markets={markets} state={state} />}
+      {tab === 'sim'  && <TabSim  state={state}     markets={markets} />}
+
+      <div style={{ textAlign: 'center', color: '#1e2330', fontSize: 11, marginTop: 24 }}>
+        PolyMarket Bot Dashboard · {new Date().getFullYear()}
+      </div>
+    </div>
+  )
+}
