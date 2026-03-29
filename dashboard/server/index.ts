@@ -35,17 +35,21 @@ app.use(express.json())
 // ── Bot process manager ────────────────────────────────────────────────────────
 let botLiveProcess: ChildProcess | null = null
 let botSimProcess:  ChildProcess | null = null
-const BOT_SCRIPT  = path.join(__dirname, '../../cryp_signal_5minutes.py')
-const BOT_LOG     = path.join(__dirname, '../../logs/bot_live.log')
-const BOT_SIM_LOG = path.join(__dirname, '../../logs/bot_sim.log')
+let botPolyProcess: ChildProcess | null = null
+const BOT_SCRIPT      = path.join(__dirname, '../../cryp_signal_5minutes.py')
+const BOT_POLY_SCRIPT = path.join(__dirname, '../../poly5m_bot.py')
+const BOT_LOG         = path.join(__dirname, '../../logs/bot_live.log')
+const BOT_SIM_LOG     = path.join(__dirname, '../../logs/bot_sim.log')
+const BOT_POLY_LOG    = path.join(__dirname, '../../logs/poly5m.log')
 
 function isLiveRunning(): boolean { return botLiveProcess !== null && !botLiveProcess.killed }
 function isSimRunning():  boolean { return botSimProcess  !== null && !botSimProcess.killed  }
+function isPolyRunning(): boolean { return botPolyProcess !== null && !botPolyProcess.killed }
 
-function spawnBot(env: Record<string, string>, logFile: string): ChildProcess {
+function spawnBot(script: string, env: Record<string, string>, logFile: string): ChildProcess {
   fs.mkdirSync(path.dirname(logFile), { recursive: true })
   const logStream = fs.createWriteStream(logFile, { flags: 'a' })
-  const proc = spawn('python', [BOT_SCRIPT], {
+  const proc = spawn('python', [script], {
     cwd: path.join(__dirname, '../..'),
     detached: false,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -63,6 +67,7 @@ app.get('/api/bot/status', (_req, res) => {
     pid:     botLiveProcess?.pid ?? null,
     live: { running: isLiveRunning(), pid: botLiveProcess?.pid ?? null },
     sim:  { running: isSimRunning(),  pid: botSimProcess?.pid  ?? null },
+    poly: { running: isPolyRunning(), pid: botPolyProcess?.pid ?? null },
   })
 })
 
@@ -70,7 +75,7 @@ app.get('/api/bot/status', (_req, res) => {
 app.post('/api/bot/start', (_req, res) => {
   if (isLiveRunning()) return res.json({ ok: false, msg: 'Bot LIVE ya está corriendo' })
   try {
-    botLiveProcess = spawnBot({ DRY_RUN: 'false', BOT_NAME: 'PROD' }, BOT_LOG)
+    botLiveProcess = spawnBot(BOT_SCRIPT, { DRY_RUN: 'false', BOT_NAME: 'PROD' }, BOT_LOG)
     botLiveProcess.on('exit', (code) => { console.log(`Bot LIVE terminó con código ${code}`); botLiveProcess = null })
     res.json({ ok: true, msg: `Bot LIVE iniciado (PID ${botLiveProcess.pid})`, pid: botLiveProcess.pid })
   } catch (e: any) { res.status(500).json({ ok: false, msg: e.message }) }
@@ -87,7 +92,7 @@ app.post('/api/bot/stop', (_req, res) => {
 app.post('/api/bot/start-sim', (_req, res) => {
   if (isSimRunning()) return res.json({ ok: false, msg: 'Bot SIM ya está corriendo' })
   try {
-    botSimProcess = spawnBot({ DRY_RUN: 'true', BOT_NAME: 'SIM' }, BOT_SIM_LOG)
+    botSimProcess = spawnBot(BOT_SCRIPT, { DRY_RUN: 'true', BOT_NAME: 'SIM' }, BOT_SIM_LOG)
     botSimProcess.on('exit', (code) => { console.log(`Bot SIM terminó con código ${code}`); botSimProcess = null })
     res.json({ ok: true, msg: `Bot SIM iniciado (PID ${botSimProcess.pid})`, pid: botSimProcess.pid })
   } catch (e: any) { res.status(500).json({ ok: false, msg: e.message }) }
@@ -100,14 +105,33 @@ app.post('/api/bot/stop-sim', (_req, res) => {
   catch (e: any) { res.status(500).json({ ok: false, msg: e.message }) }
 })
 
+// POST /api/bot/start-poly  (PM Signal CLOB)
+app.post('/api/bot/start-poly', (_req, res) => {
+  if (isPolyRunning()) return res.json({ ok: false, msg: 'Bot PM Signal ya está corriendo' })
+  try {
+    botPolyProcess = spawnBot(BOT_POLY_SCRIPT, { DRY_RUN: 'true', POLY5M_BOT_NAME: 'SIM' }, BOT_POLY_LOG)
+    botPolyProcess.on('exit', (code) => { console.log(`Bot PM Signal terminó con código ${code}`); botPolyProcess = null })
+    res.json({ ok: true, msg: `Bot PM Signal iniciado (PID ${botPolyProcess.pid})`, pid: botPolyProcess.pid })
+  } catch (e: any) { res.status(500).json({ ok: false, msg: e.message }) }
+})
+
+// POST /api/bot/stop-poly  (PM Signal CLOB)
+app.post('/api/bot/stop-poly', (_req, res) => {
+  if (!isPolyRunning()) return res.json({ ok: false, msg: 'Bot PM Signal no está corriendo' })
+  try { botPolyProcess!.kill('SIGTERM'); botPolyProcess = null; res.json({ ok: true, msg: 'Bot PM Signal detenido' }) }
+  catch (e: any) { res.status(500).json({ ok: false, msg: e.message }) }
+})
+
 // POST /api/bot/kill-all  — mata todos los procesos Python del bot y resetea límites diarios
 app.post('/api/bot/kill-all', (_req, res) => {
   try {
     // Kill tracked processes
     try { botLiveProcess?.kill('SIGTERM') } catch {}
     try { botSimProcess?.kill('SIGTERM')  } catch {}
+    try { botPolyProcess?.kill('SIGTERM') } catch {}
     botLiveProcess = null
     botSimProcess  = null
+    botPolyProcess = null
     // Kill any rogue Python processes running the bot script
     try { execSync('taskkill /F /IM python3.11.exe 2>nul || taskkill /F /IM python.exe 2>nul', { timeout: 5000 }) } catch {}
     // Reset daily counters in state file
@@ -158,6 +182,17 @@ app.get('/api/state', (_req, res) => {
     }
     res.json(JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')))
   } catch { res.status(500).json({ error: 'Error leyendo estado bot' }) }
+})
+
+// ── GET /api/poly/state — estado del bot Polymarket-only ──────────────────────
+const POLY_STATE_FILE = path.join(__dirname, '../../logs/poly5m_state.json')
+app.get('/api/poly/state', (_req, res) => {
+  try {
+    if (!fs.existsSync(POLY_STATE_FILE)) {
+      return res.json({ balance: 25, initial: 25, total_pnl: 0, total_bets: 0, total_won: 0, bets_today: 0, loss_today: 0, history: [] })
+    }
+    res.json(JSON.parse(fs.readFileSync(POLY_STATE_FILE, 'utf-8')))
+  } catch { res.status(500).json({ error: 'Error leyendo estado poly bot' }) }
 })
 
 // ── GET /api/markets ───────────────────────────────────────────────────────────

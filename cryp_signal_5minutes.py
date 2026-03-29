@@ -1,7 +1,7 @@
 """
 cryp_signal_5minutes.py
 ========================
-5-minute UP/DOWN bot for BTC, ETH, SOL and XRP on Polymarket.
+5-minute UP/DOWN bot for BTC, ETH, SOL, XRP, DOGE and HYPE on Polymarket.
 
 Cycle runs every 5 minutes, 30 seconds after each window opens:
   :00:30, :05:30, :10:30, :15:30 … past each hour
@@ -432,7 +432,7 @@ def print_banner() -> None:
     mode = "[yellow]SIM (DRY RUN)[/yellow]" if DRY_RUN else "[bold red]LIVE[/bold red]"
     console.rule(f"[bold cyan]CRYPTO 5M BOT[/bold cyan] — {mode}")
     console.print(
-        f"  Assets: BTC · ETH · SOL · XRP  |  "
+        f"  Assets: BTC · ETH · SOL · XRP · DOGE · HYPE  |  "
         f"Bet: ${BET_SIZE}  Min edge: {MIN_EDGE:.0%}  "
         f"Balance inicial: ${INITIAL_BALANCE}  |  Ciclo: cada 5 minutos"
     )
@@ -574,7 +574,7 @@ def print_history(state: dict, n: int = 12) -> None:
         return
 
     now = datetime.now(timezone.utc)
-    t   = Table(title="HISTORIAL BTC/ETH/SOL/XRP 5M", box=box.SIMPLE, header_style="bold")
+    t   = Table(title="HISTORIAL BTC/ETH/SOL/XRP/DOGE/HYPE 5M", box=box.SIMPLE, header_style="bold")
     t.add_column("Hora",    no_wrap=True, width=16)
     t.add_column("Asset",   width=4)
     t.add_column("Lado",    justify="center", width=5)
@@ -695,6 +695,10 @@ def pnl_alert() -> None:
     balance = state["balance"]
     won     = state["total_won"]
     total   = state["total_bets"]
+
+    if total == 0:
+        return  # Sin apuestas aún — no spamear
+
     pending = sum(1 for b in state["history"] if b["status"] == "PENDING")
     pnl_c   = "green" if pnl >= 0 else "red"
     arrow   = "+" if pnl >= 0 else "-"
