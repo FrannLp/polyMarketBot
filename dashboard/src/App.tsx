@@ -96,7 +96,7 @@ function posStatus(p: any): 'WON' | 'LOST' | 'OPEN' {
   return 'OPEN'
 }
 
-function TabReal({ account, markets, state }: { account: Account | null; markets: Market[]; state: BotState | null }) {
+function TabReal({ account, markets, state, polyState }: { account: Account | null; markets: Market[]; state: BotState | null; polyState: BotState | null }) {
   const [actPage, setActPage] = useState(0)
   const PAGE_SIZE = 10
 
@@ -104,8 +104,8 @@ function TabReal({ account, markets, state }: { account: Account | null; markets
   const positions = account?.positions ?? []
   const open = positions.filter(p => posStatus(p) === 'OPEN').length
 
-  // Win rate and PnL from REAL bets only (dry_run=false), resolved only
-  const realHistory  = (state?.history ?? []).filter(b => !b.dry_run)
+  // Win rate and PnL from LIVE poly5m bets (dry_run=false in poly5m_state.json)
+  const realHistory  = (polyState?.history ?? []).filter(b => !b.dry_run)
   const realResolved = realHistory.filter(b => b.status === 'WON' || b.status === 'LOST')
   const totalBets = realResolved.length
   const totalWon  = realResolved.filter(b => b.status === 'WON').length
@@ -176,52 +176,29 @@ function TabReal({ account, markets, state }: { account: Account | null; markets
         type AItem = { key: string; node: React.ReactNode; ts: number }
         const items: AItem[] = []
 
-        // Open positions first (most recent)
-        ;(account?.positions ?? []).filter(p => posStatus(p) === 'OPEN').forEach((p: any, i: number) => {
-          const pOutcome = p.outcome || '?'
-          const isUp = pOutcome === 'Up'
-          const titleMatch = (p.title || '').match(/Bitcoin|Ethereum|Solana|XRP/i)?.[0] || ''
-          const assetKey = titleMatch.startsWith('Bit') ? 'BTC' : titleMatch.startsWith('Eth') ? 'ETH' : titleMatch.startsWith('Sol') ? 'SOL' : 'XRP'
-          const color = ASSET_COLOR[assetKey] ?? '#64748b'
-          const cents = Math.round((p.curPrice ?? 0) * 100)
-          items.push({ key: `pos-${i}`, ts: Date.now(), node: (
-            <div className="activity-row">
-              <div className="act-icon pending">⏳</div>
-              <div className="asset-icon" style={{ background: color }}>{assetKey[0]}</div>
-              <div className="act-info">
-                <div className="act-name">{(p.title || '?').slice(0, 60)}</div>
-                <div className="act-meta">
-                  <span className={`act-badge ${isUp ? 'up' : 'down'}`}>{isUp ? '▲' : '▼'} {isUp ? 'UP' : 'DOWN'} {cents}¢ actual</span>
-                  <span className="act-shares">{p.size} acciones</span>
-                </div>
-              </div>
-              <div className="act-right">
-                <div className="act-value neu">En curso</div>
-                <div className="act-time">abierto</div>
-              </div>
-            </div>
-          )})
-        })
+        // 1 fila por bet: ✓ WON | ✗ LOST | ⏳ PENDING — sin duplicar compra+pago
+        const pendingMarkets = new Set(
+          (polyState?.history ?? []).filter(b => !b.dry_run && b.status === 'PENDING').map(b => b.market_id)
+        )
 
-        // History bets newest-first (only real bets, not dry_run/simulation)
-        ;[...(state?.history ?? [])].filter(b => !b.dry_run).reverse().forEach((b, i) => {
+        ;[...(polyState?.history ?? [])].filter(b => !b.dry_run).reverse().forEach((b, i) => {
           const color  = ASSET_COLOR[b.asset] ?? '#64748b'
           const isUp   = b.side === 'UP'
           const cents  = Math.round((b.price ?? 0) * 100)
           const shares = b.price > 0 ? (b.bet_size / b.price).toFixed(1) : '—'
           const payout = b.pnl != null ? b.pnl + b.bet_size : b.bet_size / (b.price ?? 1)
           const shortQ = (b.question || `${b.asset} Up or Down`).slice(0, 60)
-          const ts = new Date(b.timestamp).getTime()
+          const ts     = new Date(b.timestamp).getTime()
+          const badge  = <span className={`act-badge ${isUp ? 'up' : 'down'}`}>{isUp ? '▲' : '▼'} {b.side} {cents}¢</span>
 
           if (b.status === 'WON') {
-            // Reclamado row first (more recent)
-            items.push({ key: `win-${i}`, ts: ts + 1, node: (
+            items.push({ key: `win-${i}`, ts, node: (
               <div className="activity-row">
                 <div className="act-icon claimed">✓</div>
                 <div className="asset-icon" style={{ background: color }}>{b.asset[0]}</div>
                 <div className="act-info">
                   <div className="act-name">{shortQ}</div>
-                  <div className="act-meta"><span className="act-badge up">Reclamado</span></div>
+                  <div className="act-meta">{badge}<span className="act-shares">{shares} acciones</span></div>
                 </div>
                 <div className="act-right">
                   <div className="act-value pos">+{fmt(payout)}</div>
@@ -229,39 +206,53 @@ function TabReal({ account, markets, state }: { account: Account | null; markets
                 </div>
               </div>
             )})
+          } else if (b.status === 'LOST') {
+            items.push({ key: `lost-${i}`, ts, node: (
+              <div className="activity-row">
+                <div className="act-icon lost">✗</div>
+                <div className="asset-icon" style={{ background: color }}>{b.asset[0]}</div>
+                <div className="act-info">
+                  <div className="act-name">{shortQ}</div>
+                  <div className="act-meta">{badge}<span className="act-shares">{shares} acciones</span></div>
+                </div>
+                <div className="act-right">
+                  <div className="act-value neg">-{fmt(b.bet_size ?? 0)}</div>
+                  <div className="act-time">{timeAgo(b.timestamp)}</div>
+                </div>
+              </div>
+            )})
+          } else {
+            // PENDING
+            items.push({ key: `pend-${i}`, ts, node: (
+              <div className="activity-row">
+                <div className="act-icon pending">⏳</div>
+                <div className="asset-icon" style={{ background: color }}>{b.asset[0]}</div>
+                <div className="act-info">
+                  <div className="act-name">{shortQ}</div>
+                  <div className="act-meta">{badge}<span className="act-shares">{shares} acciones</span></div>
+                </div>
+                <div className="act-right">
+                  <div className="act-value neu">En curso</div>
+                  <div className="act-time">{timeAgo(b.timestamp)}</div>
+                </div>
+              </div>
+            )})
           }
-
-          const buyIcon = b.status === 'LOST' ? 'lost' : b.status === 'PENDING' ? 'pending' : 'bought'
-          const buySymbol = b.status === 'LOST' ? '✗' : '⊕'
-          items.push({ key: `buy-${i}`, ts, node: (
-            <div className="activity-row">
-              <div className={`act-icon ${buyIcon}`}>{buySymbol}</div>
-              <div className="asset-icon" style={{ background: color }}>{b.asset[0]}</div>
-              <div className="act-info">
-                <div className="act-name">{shortQ}</div>
-                <div className="act-meta">
-                  <span className={`act-badge ${isUp ? 'up' : 'down'}`}>{isUp ? '▲' : '▼'} {b.side} {cents}¢</span>
-                  <span className="act-shares">{shares} acciones</span>
-                </div>
-              </div>
-              <div className="act-right">
-                <div className={`act-value ${b.status === 'LOST' ? 'neg' : b.status === 'PENDING' ? 'neu' : 'neg'}`}>
-                  {b.status === 'PENDING' ? `−${fmt(b.bet_size ?? 0)}` : `-${fmt(b.bet_size ?? 0)}`}
-                </div>
-                <div className="act-time">{timeAgo(b.timestamp)}</div>
-              </div>
-            </div>
-          )})
         })
 
         // Add CLOB trades not already covered by state.history (e.g. manual test bets)
         // Only show entries with a recognizable title (Bitcoin/Ethereum/Solana/XRP) to avoid
         // confusing CLOB fill artifacts with inflated sizes from maker orders.
-        const stateMarkets = new Set((state?.history ?? []).map(b => b.market_id))
+        const stateMarkets = new Set((polyState?.history ?? []).filter(b => !b.dry_run).map(b => b.market_id))
         const seenClob     = new Set<string>()
+        const cutoff24h    = Date.now() - 24 * 60 * 60 * 1000
         ;(account?.trades ?? []).forEach((t: any) => {
           if (stateMarkets.has(t.market)) return   // already in state
           if (seenClob.has(t.market))    return   // deduplicate fills
+          // solo mostrar trades de las últimas 24 horas
+          const rawTs = t.match_time || ''
+          const tsMs  = /^\d+$/.test(rawTs) ? parseInt(rawTs) * 1000 : 0
+          if (tsMs < cutoff24h) return
           seenClob.add(t.market)
           // detect asset from title — skip if not a recognized market
           const matchPos = (account?.positions ?? []).find((p: any) => p.conditionId === t.market)
@@ -271,8 +262,6 @@ function TabReal({ account, markets, state }: { account: Account | null; markets
           const isUp     = outcome === 'Up'
           const side     = isUp ? 'UP' : 'DOWN'
           const price    = parseFloat(t.price || '0')
-          const rawTs    = t.match_time || ''
-          const tsMs     = /^\d+$/.test(rawTs) ? parseInt(rawTs) * 1000 : Date.now()
           const tsIso    = new Date(tsMs).toISOString()
           const cents    = Math.round(price * 100)
           // determine status from positions cross-reference
@@ -984,7 +973,7 @@ export default function App() {
         </button>
       </div>
 
-      {tab === 'real'   && <TabReal   account={account} markets={markets} state={state} />}
+      {tab === 'real'   && <TabReal   account={account} markets={markets} state={state} polyState={polyState} />}
       {tab === 'sim'    && <TabSim    state={state}      markets={markets} />}
       {tab === 'poly'   && <TabPoly   state={polyState}  markets={markets} />}
       {tab === 'spread' && <TabSpread state={polyState} />}
