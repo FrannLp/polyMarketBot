@@ -79,6 +79,77 @@ MIN_EDGE_PER_ASSET: dict[str, float] = {
     "HYPE": float(os.getenv("POLY5M_MIN_EDGE_HYPE", "99.0")),   # effectively disabled: 33% WR
 }
 
+# ── Auto-redeem (claim USDC de posiciones ganadoras) ──────────────────────────
+POLYGON_RPC  = os.getenv("POLYGON_RPC", "https://1rpc.io/matic")
+CTF_ADDRESS  = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+USDC_POLYGON = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+
+_CTF_ABI = [
+    {"inputs":[{"name":"collateralToken","type":"address"},{"name":"parentCollectionId","type":"bytes32"},
+               {"name":"conditionId","type":"bytes32"},{"name":"indexSets","type":"uint256[]"}],
+     "name":"redeemPositions","outputs":[],"stateMutability":"nonpayable","type":"function"},
+    {"inputs":[{"name":"account","type":"address"},{"name":"id","type":"uint256"}],
+     "name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+]
+_PROXY_ABI = [
+    {"inputs":[{"name":"to","type":"address"},{"name":"value","type":"uint256"},{"name":"data","type":"bytes"}],
+     "name":"execute","outputs":[{"name":"","type":"bytes"}],"stateMutability":"payable","type":"function"},
+]
+
+def _auto_redeem(condition_id: str, side_won: str) -> bool:
+    """Llama CTF.redeemPositions via proxy wallet. Requiere MATIC en EOA."""
+    if DRY_RUN:
+        return False
+    try:
+        from web3 import Web3
+        private_key  = os.getenv("POLYMARKET_PRIVATE_KEY", "")
+        proxy_wallet = os.getenv("POLYMARKET_PROXY_WALLET", "")
+        if not private_key or not proxy_wallet:
+            return False
+
+        w3   = Web3(Web3.HTTPProvider(POLYGON_RPC, request_kwargs={"timeout": 10}))
+        acct = w3.eth.account.from_key(private_key)
+
+        # Check EOA has MATIC for gas
+        matic = w3.eth.get_balance(acct.address)
+        if matic < w3.to_wei(0.005, "ether"):
+            console.print(f"[yellow][REDEEM] Sin MATIC suficiente ({w3.from_wei(matic,'ether'):.4f}). Deposita MATIC en {acct.address}[/yellow]")
+            return False
+
+        ctf   = w3.eth.contract(address=Web3.to_checksum_address(CTF_ADDRESS), abi=_CTF_ABI)
+        proxy = w3.eth.contract(address=Web3.to_checksum_address(proxy_wallet),  abi=_PROXY_ABI)
+
+        cid_bytes = bytes.fromhex(condition_id.replace("0x", ""))
+        # UP won = outcome index 0 = indexSet 1  |  DOWN won = outcome index 1 = indexSet 2
+        index_sets = [1] if side_won == "UP" else [2]
+
+        redeem_data = ctf.encodeABI(
+            fn_name="redeemPositions",
+            args=[
+                Web3.to_checksum_address(USDC_POLYGON),
+                b"\x00" * 32,
+                cid_bytes,
+                index_sets,
+            ]
+        )
+        tx = proxy.functions.execute(
+            Web3.to_checksum_address(CTF_ADDRESS), 0, redeem_data
+        ).build_transaction({
+            "from":     acct.address,
+            "nonce":    w3.eth.get_transaction_count(acct.address),
+            "gas":      180_000,
+            "gasPrice": int(w3.eth.gas_price * 1.2),
+            "chainId":  137,
+        })
+        signed  = w3.eth.account.sign_transaction(tx, private_key)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        console.print(f"[green][REDEEM] Claim enviado: {tx_hash.hex()[:20]}...[/green]")
+        return True
+    except Exception as e:
+        console.print(f"[red][REDEEM] Error: {e}[/red]")
+        return False
+
+
 # ── CLOB client (solo para LIVE) ──────────────────────────────────────────────
 _clob_client = None
 
@@ -474,6 +545,8 @@ def check_resolutions(state: dict) -> int:
                 state["total_pnl"] = round(state["total_pnl"] + pnl, 4)
                 console.print(f"  [green]POLY WON[/green]  [{BOT_NAME}] {bet['asset']} {bet['side']} +${pnl:.2f}")
                 _notify_resolved(bet, pnl)
+                # Auto-claim: redeem winning tokens → USDC
+                _auto_redeem(bet.get("market_id", ""), bet["side"])
             else:
                 pnl = -bet_size
                 bet["status"] = "LOST"
