@@ -54,8 +54,8 @@ from cryp_5m_scraper  import fetch_5m_markets, ASSETS
 from poly5m_analyzer  import analyze_market_poly, get_best_ask
 
 # ── Config ────────────────────────────────────────────────────────────────────
-DRY_RUN          = os.getenv("DRY_RUN",                       "true").lower() == "true"
-BOT_NAME         = os.getenv("POLY5M_BOT_NAME",               "SIM" if os.getenv("DRY_RUN","true").lower()=="true" else "PROD")
+DRY_RUN          = os.getenv("POLY5M_DRY_RUN",  os.getenv("DRY_RUN", "true")).lower() == "true"
+BOT_NAME         = os.getenv("POLY5M_BOT_NAME",               "SIM" if DRY_RUN else "LIVE")
 BET_SIZE         = float(os.getenv("POLY5M_BET_SIZE",         "2.50"))
 INITIAL_BALANCE  = float(os.getenv("POLY5M_INITIAL_BALANCE",  "25.00"))
 MIN_EDGE         = float(os.getenv("POLY5M_MIN_EDGE",          "0.06"))
@@ -64,7 +64,9 @@ DAILY_STOP_LOSS  = float(os.getenv("POLY5M_DAILY_STOP_LOSS",   "300.00"))
 MAX_PRICE        = float(os.getenv("POLY5M_MAX_PRICE",          "0.65"))
 MIN_BOOK_DEPTH   = float(os.getenv("POLY5M_MIN_BOOK_DEPTH",    "500"))
 MAX_PER_CYCLE    = int(os.getenv("POLY5M_MAX_BETS_PER_CYCLE",  "2"))
+MAX_SLIP         = float(os.getenv("POLY5M_MAX_SLIP", "0.05"))   # max spread to accept (5%)
 TG_TOKEN         = os.getenv("POLY5M_TELEGRAM_TOKEN",  "") or os.getenv("TELEGRAM_TOKEN", "")
+TG_TOKEN_FALLBACK = os.getenv("TELEGRAM_TOKEN", "") if os.getenv("POLY5M_TELEGRAM_TOKEN") else ""
 TG_CHAT          = os.getenv("POLY5M_TELEGRAM_CHAT_ID", "") or os.getenv("TELEGRAM_CHAT_ID", "")
 
 # Per-asset MIN_EDGE overrides and on/off switch (none = skip asset)
@@ -136,11 +138,18 @@ def _tg(text: str) -> None:
         return
     try:
         import requests as _req
-        _req.post(
+        resp = _req.post(
             f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
             json={"chat_id": TG_CHAT, "text": text, "parse_mode": "HTML"},
             timeout=6,
         )
+        # If POLY5M token fails (bot not started by user), fall back to main token
+        if not resp.ok and TG_TOKEN_FALLBACK and TG_TOKEN_FALLBACK != TG_TOKEN:
+            _req.post(
+                f"https://api.telegram.org/bot{TG_TOKEN_FALLBACK}/sendMessage",
+                json={"chat_id": TG_CHAT, "text": text, "parse_mode": "HTML"},
+                timeout=6,
+            )
     except Exception:
         pass
 
@@ -317,8 +326,12 @@ def can_bet(state: dict) -> tuple[bool, str]:
 
 
 def record_bet(state: dict, market: dict, side: str, price: float, edge: float,
-               analysis: dict, fill_price: float | None = None,
+               analysis: dict, mid_price: float | None = None,
+               fill_price: float | None = None,
                slippage: float | None = None, order_id: str | None = None) -> dict:
+    # Costo real = shares × price (mínimo 5 shares en Polymarket)
+    shares    = max(5.0, round(BET_SIZE / price, 2))
+    real_cost = round(shares * price, 4)
     bet = {
         "timestamp":  datetime.now(timezone.utc).isoformat(),
         "dry_run":    DRY_RUN,
@@ -326,7 +339,9 @@ def record_bet(state: dict, market: dict, side: str, price: float, edge: float,
         "market_id":  market["market_id"],
         "question":   market["question"],
         "side":       side,
-        "bet_size":   BET_SIZE,
+        "bet_size":   real_cost,
+        "shares":     shares,
+        "mid_price":  round(mid_price, 4) if mid_price is not None else None,
         "price":      price,
         "fill_price": round(fill_price, 4) if fill_price is not None else None,
         "slippage":   round(slippage, 4)   if slippage  is not None else None,
@@ -340,9 +355,9 @@ def record_bet(state: dict, market: dict, side: str, price: float, edge: float,
         "pnl":        None,
     }
     state["history"].append(bet)
-    state["balance"]    -= BET_SIZE
+    state["balance"]    -= real_cost
     state["bets_today"] += 1
-    state["loss_today"] += BET_SIZE
+    state["loss_today"] += real_cost
     state["total_bets"] += 1
     _save(state)
     return bet
@@ -634,10 +649,21 @@ def run_cycle():
         ask_price = get_best_ask(token_id) if token_id else None
         order_id  = None
 
-        # Skip if ask price is above MAX_PRICE — spread too wide, edge would be negative in LIVE
+        # Skip if ask price is above MAX_PRICE — spread too wide
         if ask_price is not None and ask_price > MAX_PRICE:
             console.print(f"  [yellow]SKIP[/yellow] {sig['asset']} {side} — ask {ask_price:.3f} > MAX_PRICE {MAX_PRICE}")
             continue
+
+        # Skip if slippage (ask - mid) exceeds MAX_SLIP — edge is wiped out
+        if ask_price is not None:
+            eff_slip = ask_price - mid_price
+            if eff_slip > MAX_SLIP:
+                console.print(
+                    f"  [yellow]SKIP[/yellow] {sig['asset']} {side} — "
+                    f"slip {eff_slip:+.3f} > MAX_SLIP {MAX_SLIP} "
+                    f"(mid={mid_price:.3f} ask={ask_price:.3f})"
+                )
+                continue
 
         if DRY_RUN:
             # SIM: use mid-price for bet, record ask as fill_price to track spread
@@ -657,6 +683,7 @@ def run_cycle():
             order_id   = str(order_resp.get("orderID") or order_resp.get("id") or "")
 
         bet  = record_bet(state, mkt, side, price, edge, a,
+                          mid_price=mid_price,
                           fill_price=fill_price, slippage=slippage, order_id=order_id)
         gain = BET_SIZE / price
 
