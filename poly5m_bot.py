@@ -229,11 +229,24 @@ def pnl_alert() -> None:
 
     if total == 0:
         return  # Sin apuestas aún — no spamear
-    pending = sum(1 for b in state["history"] if b["status"] == "PENDING")
-    arrow   = "+" if pnl >= 0 else "-"
     mode    = "SIM" if DRY_RUN else "REAL"
 
-    recent = state["history"][-10:][::-1]
+    # Filter to only bets matching current mode (avoid mixing SIM+LIVE)
+    mode_history = [b for b in state["history"] if b.get("dry_run", True) == DRY_RUN]
+    mode_won     = sum(1 for b in mode_history if b["status"] == "WON")
+    mode_total   = len(mode_history)
+    mode_pnl     = sum(b.get("pnl") or 0 for b in mode_history if b["status"] != "PENDING")
+    mode_balance = state["initial"] + mode_pnl  # balance based on mode-only bets
+    pending = sum(1 for b in mode_history if b["status"] == "PENDING")
+    arrow   = "+" if mode_pnl >= 0 else "-"
+
+    # Balance = initial + PnL solo del modo actual (evita mezclar SIM con LIVE)
+    display_balance = mode_balance
+    display_pnl     = mode_pnl
+    display_won     = mode_won
+    display_total   = mode_total
+
+    recent = mode_history[-10:][::-1]
     bet_lines = []
     for b in recent:
         st = b.get("status", "PENDING")
@@ -255,13 +268,13 @@ def pnl_alert() -> None:
             f"{ic} {b.get('asset','?')} {side_ic} @{b.get('price',0):.2f}{time_str} → <b>{pnl_txt}</b>"
         )
 
-    # Slippage stats (SIM: ask vs mid spread measurement)
-    slippages = [b["slippage"] for b in state["history"] if b.get("slippage") is not None]
+    # Slippage stats (only for current mode)
+    slippages = [b["slippage"] for b in mode_history if b.get("slippage") is not None]
     slip_line = ""
     if slippages:
         avg_slip  = sum(slippages) / len(slippages)
         max_slip  = max(slippages)
-        slip_cost = avg_slip * total  # approx total cost in USDC per share
+        slip_cost = avg_slip * display_total
         slip_line = (
             f"\n📉 Spread avg: <b>{avg_slip:+.4f}</b>  max: {max_slip:+.4f}"
             f"  (≈${slip_cost:.2f} acum en {len(slippages)} apuestas)"
@@ -271,9 +284,9 @@ def pnl_alert() -> None:
     _tg(
         f"⏰ <b>RESUMEN 10MIN — 5M Bot [{mode}]</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"💰 Balance: <b>${balance:.2f}</b>\n"
-        f"📊 PnL: <b>{arrow} ${pnl:+.2f}</b>\n"
-        f"🎯 Win: {won}/{total}  |  ⏳ Pendientes: {pending}"
+        f"💰 Balance: <b>${display_balance:.2f}</b>\n"
+        f"📊 PnL: <b>{arrow} ${display_pnl:+.2f}</b>\n"
+        f"🎯 Win: {display_won}/{display_total}  |  ⏳ Pendientes: {pending}"
         f"{slip_line}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"{bets_block}"
