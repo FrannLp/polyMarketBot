@@ -80,7 +80,7 @@ MIN_EDGE_PER_ASSET: dict[str, float] = {
 }
 
 # ── Auto-redeem (claim USDC de posiciones ganadoras) ──────────────────────────
-POLYGON_RPC  = os.getenv("POLYGON_RPC", "https://1rpc.io/matic")
+POLYGON_RPC  = os.getenv("POLYGON_RPC", "https://polygon.llamarpc.com")
 CTF_ADDRESS  = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
 USDC_POLYGON = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
 
@@ -107,7 +107,20 @@ def _auto_redeem(condition_id: str, side_won: str) -> bool:
         if not private_key or not proxy_wallet:
             return False
 
-        w3   = Web3(Web3.HTTPProvider(POLYGON_RPC, request_kwargs={"timeout": 10}))
+        # Try multiple RPCs in case one rate-limits
+        _rpcs = [POLYGON_RPC, "https://polygon.llamarpc.com", "https://rpc.ankr.com/polygon/", "https://1rpc.io/matic"]
+        w3 = None
+        for _rpc in _rpcs:
+            try:
+                _w3 = Web3(Web3.HTTPProvider(_rpc, request_kwargs={"timeout": 8}))
+                _w3.eth.block_number  # quick connectivity test
+                w3 = _w3
+                break
+            except Exception:
+                continue
+        if w3 is None:
+            console.print("[red][REDEEM] Sin RPC disponible[/red]")
+            return False
         acct = w3.eth.account.from_key(private_key)
 
         # Check EOA has MATIC for gas
