@@ -71,12 +71,12 @@ TG_CHAT          = os.getenv("POLY5M_TELEGRAM_CHAT_ID", "") or os.getenv("TELEGR
 
 # Per-asset MIN_EDGE overrides and on/off switch (none = skip asset)
 MIN_EDGE_PER_ASSET: dict[str, float] = {
-    "BTC":  float(os.getenv("POLY5M_MIN_EDGE_BTC",  str(MIN_EDGE))),
+    "BTC":  float(os.getenv("POLY5M_MIN_EDGE_BTC",  "0.12")),    # raised: 43% WR
     "ETH":  float(os.getenv("POLY5M_MIN_EDGE_ETH",  str(MIN_EDGE))),
-    "SOL":  float(os.getenv("POLY5M_MIN_EDGE_SOL",  "0.10")),   # raised: 46% WR
+    "SOL":  float(os.getenv("POLY5M_MIN_EDGE_SOL",  "99.0")),   # disabled: 25% WR
     "XRP":  float(os.getenv("POLY5M_MIN_EDGE_XRP",  str(MIN_EDGE))),
     "DOGE": float(os.getenv("POLY5M_MIN_EDGE_DOGE", str(MIN_EDGE))),
-    "HYPE": float(os.getenv("POLY5M_MIN_EDGE_HYPE", "99.0")),   # effectively disabled: 33% WR
+    "HYPE": float(os.getenv("POLY5M_MIN_EDGE_HYPE", "99.0")),   # disabled: 33% WR
 }
 
 # ── Auto-redeem (claim USDC de posiciones ganadoras) ──────────────────────────
