@@ -123,8 +123,9 @@ def _auto_redeem(condition_id: str, side_won: str) -> bool:
         # UP won = outcome index 0 = indexSet 1  |  DOWN won = outcome index 1 = indexSet 2
         index_sets = [1] if side_won == "UP" else [2]
 
-        redeem_data = ctf.encodeABI(
-            fn_name="redeemPositions",
+        # web3.py v7: use encode_abi (encodeABI removed)
+        redeem_data = ctf.encode_abi(
+            "redeemPositions",
             args=[
                 Web3.to_checksum_address(USDC_POLYGON),
                 b"\x00" * 32,
