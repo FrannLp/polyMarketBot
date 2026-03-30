@@ -10,36 +10,56 @@ import requests
 from datetime import datetime, timezone
 from config import GAMMA_API
 
-# Coordenadas de ciudades
+# Airport coordinates (ICAO station) — Polymarket resolves against these exact stations
+# Source: article by AlterEgo_eth + extended for other Polymarket cities
 CITY_COORDS = {
-    "wellington":     (-41.2865, 174.7762),
-    "tokyo":          (35.6895, 139.6917),
-    "buenos aires":   (-34.6037, -58.3816),
-    "sao paulo":      (-23.5505, -46.6333),
-    "new york":       (40.7128, -74.0060),
-    "london":         (51.5074, -0.1278),
-    "paris":          (48.8566, 2.3522),
-    "sydney":         (-33.8688, 151.2093),
-    "miami":          (25.7617, -80.1918),
-    "chicago":        (41.8781, -87.6298),
-    "los angeles":    (34.0522, -118.2437),
-    "toronto":        (43.6532, -79.3832),
-    "berlin":         (52.5200, 13.4050),
-    "madrid":         (40.4168, -3.7038),
-    "rome":           (41.9028, 12.4964),
-    "seoul":          (37.5665, 126.9780),
-    "singapore":      (1.3521, 103.8198),
-    "cape town":      (-33.9249, 18.4241),
-    "mexico city":    (19.4326, -99.1332),
-    "bangkok":        (13.7563, 100.5018),
-    "istanbul":       (41.0082, 28.9784),
-    "dubai":          (25.2048, 55.2708),
-    "mumbai":         (19.0760, 72.8777),
-    "moscow":         (55.7558, 37.6176),
-    "amsterdam":      (52.3676, 4.9041),
-    "santiago":       (-33.4489, -70.6693),
-    "lima":           (-12.0464, -77.0428),
-    "bogota":         (4.7110, -74.0721),
+    # US — °F (airport coords)
+    "new york":     (40.7772,  -73.8726),   # KLGA LaGuardia
+    "chicago":      (41.9742,  -87.9073),   # KORD O'Hare
+    "miami":        (25.7959,  -80.2870),   # KMIA Miami Intl
+    "dallas":       (32.8471,  -96.8518),   # KDAL Dallas Love
+    "seattle":      (47.4502, -122.3088),   # KSEA Seattle-Tacoma
+    "atlanta":      (33.6407,  -84.4277),   # KATL Hartsfield-Jackson
+    "los angeles":  (33.9425, -118.4081),   # KLAX LAX
+    # EU — °C (airport coords)
+    "london":       (51.5048,    0.0495),   # EGLC London City
+    "paris":        (48.9962,    2.5979),   # LFPG CDG
+    "munich":       (48.3537,   11.7750),   # EDDM Munich
+    "berlin":       (52.3667,   13.5033),   # EDDB Brandenburg
+    "madrid":       (40.4722,   -3.5608),   # LEMD Barajas
+    "rome":         (41.8003,   12.2388),   # LIRF Fiumicino
+    "amsterdam":    (52.3105,    4.7683),   # EHAM Schiphol
+    "ankara":       (40.1281,   32.9951),   # LTAC Esenboga
+    "istanbul":     (41.2753,   28.7519),   # LTBA Ataturk
+    "moscow":       (55.9726,   37.4146),   # UUEE Sheremetyevo
+    # Asia — °C (airport coords)
+    "seoul":        (37.4691,  126.4505),   # RKSI Incheon
+    "tokyo":        (35.7647,  140.3864),   # RJTT Haneda
+    "shanghai":     (31.1443,  121.8083),   # ZSPD Pudong
+    "singapore":    ( 1.3502,  103.9940),   # WSSS Changi
+    "lucknow":      (26.7606,   80.8893),   # VILK Chaudhary Charan Singh
+    "tel aviv":     (32.0114,   34.8867),   # LLBG Ben Gurion
+    "dubai":        (25.2532,   55.3657),   # OMDB Dubai Intl
+    "mumbai":       (19.0887,   72.8679),   # VABB Chhatrapati Shivaji
+    "bangkok":      (13.9125,  100.6068),   # VTBS Suvarnabhumi
+    # Americas — °C (airport coords)
+    "toronto":      (43.6772,  -79.6306),   # CYYZ Pearson
+    "sao paulo":    (-23.4356, -46.4731),   # SBGR Guarulhos
+    "buenos aires": (-34.8222, -58.5358),   # SAEZ Ezeiza
+    "mexico city":  (19.4363,  -99.0721),   # MMMX Benito Juarez
+    "bogota":       ( 4.7016,  -74.1469),   # SKBO El Dorado
+    "lima":         (-12.0219, -77.1143),   # SPJC Jorge Chavez
+    "santiago":     (-33.3930, -70.7858),   # SCEL Arturo Merino Benitez
+    # Oceania — °C (airport coords)
+    "wellington":   (-41.3272,  174.8052),  # NZWN Wellington
+    "sydney":       (-33.9461,  151.1772),  # YSSY Kingsford Smith
+    "cape town":    (-33.9648,   18.6017),  # FACT Cape Town Intl
+}
+
+# Unit per city: "F" for US, "C" for rest
+CITY_UNITS: dict[str, str] = {
+    "new york": "F", "chicago": "F", "miami": "F",
+    "dallas": "F", "seattle": "F", "atlanta": "F", "los angeles": "F",
 }
 
 # Fahrenheit a Celsius
@@ -113,6 +133,27 @@ def _parse_market(m: dict) -> dict | None:
     except Exception:
         pass
 
+    # Extract CLOB token IDs (needed for live order execution)
+    import json as _json
+    raw_ids = m.get("clobTokenIds") or "[]"
+    try:
+        token_ids = _json.loads(raw_ids) if isinstance(raw_ids, str) else (raw_ids or [])
+    except Exception:
+        token_ids = []
+    token_id_yes = token_ids[0] if len(token_ids) > 0 else None
+    token_id_no  = token_ids[1] if len(token_ids) > 1 else None
+
+    # Bid/ask spread
+    try:
+        bid = float(m.get("bestBid") or 0)
+        ask = float(m.get("bestAsk") or 0)
+        spread = round(ask - bid, 4) if bid > 0 and ask > 0 else None
+    except Exception:
+        bid = ask = 0
+        spread = None
+
+    unit = CITY_UNITS.get(matched_city, "C")
+
     return {
         "market_id":      m.get("conditionId") or m.get("id") or "",
         "slug":           m.get("slug") or "",
@@ -120,10 +161,16 @@ def _parse_market(m: dict) -> dict | None:
         "city":           matched_city,
         "lat":            coords[0],
         "lon":            coords[1],
+        "unit":           unit,
         "temp_threshold": round(temp, 1),
         "condition":      condition,
         "price_yes":      price_yes,
         "price_no":       price_no,
+        "bid":            bid,
+        "ask":            ask,
+        "spread":         spread,
+        "token_id_yes":   token_id_yes,
+        "token_id_no":    token_id_no,
         "end_date":       end_date,
         "days_to_resolve": days_to_resolve,
         "volume":         float(m.get("volume") or 0),

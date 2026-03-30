@@ -15,6 +15,7 @@ Usage:
 
 Config (.env):
     POLY5M_BET_SIZE         default 2.50
+    POLY5M_MIN_SHARES       default 5.0   (floor de shares; alineado con mínimo típico CLOB)
     POLY5M_INITIAL_BALANCE  default 25.00
     POLY5M_MIN_EDGE         default 0.06   (6% — lower since signal is cleaner)
     POLY5M_MAX_DAILY_BETS   default 200
@@ -57,6 +58,7 @@ from poly5m_analyzer  import analyze_market_poly, get_best_ask
 DRY_RUN          = os.getenv("POLY5M_DRY_RUN",  os.getenv("DRY_RUN", "true")).lower() == "true"
 BOT_NAME         = os.getenv("POLY5M_BOT_NAME",               "SIM" if DRY_RUN else "LIVE")
 BET_SIZE         = float(os.getenv("POLY5M_BET_SIZE",         "2.50"))
+MIN_SHARES       = float(os.getenv("POLY5M_MIN_SHARES",       "5.0"))
 INITIAL_BALANCE  = float(os.getenv("POLY5M_INITIAL_BALANCE",  "25.00"))
 MIN_EDGE         = float(os.getenv("POLY5M_MIN_EDGE",          "0.06"))
 MAX_DAILY_BETS   = int(os.getenv("POLY5M_MAX_DAILY_BETS",      "200"))
@@ -93,11 +95,6 @@ _CTF_ABI = [
     {"inputs":[{"name":"","type":"bytes32"}],
      "name":"payoutDenominator","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
 ]
-_PROXY_ABI = [
-    {"inputs":[{"name":"to","type":"address"},{"name":"value","type":"uint256"},{"name":"data","type":"bytes"}],
-     "name":"execute","outputs":[{"name":"","type":"bytes"}],"stateMutability":"payable","type":"function"},
-]
-
 # Queue of pending redeems: list of {"condition_id": str, "side": str, "asset": str, "added_at": float}
 _REDEEM_QUEUE: list[dict] = []
 
@@ -115,18 +112,37 @@ def _get_w3():
     return None
 
 
-def _auto_redeem(condition_id: str, side_won: str, asset: str = "") -> bool:
-    """Llama CTF.redeemPositions via proxy wallet.
+def _encode_redeem_calldata(collateral: str, condition_id: str, index_sets: list[int]) -> str:
+    """Calldata hex para CTF.redeemPositions (usado por el relayer)."""
+    from web3 import Web3
+    w3 = Web3()
+    ctf = w3.eth.contract(address=Web3.to_checksum_address(CTF_ADDRESS), abi=_CTF_ABI)
+    cid_bytes = bytes.fromhex(condition_id.replace("0x", ""))
+    return ctf.functions.redeemPositions(
+        Web3.to_checksum_address(collateral),
+        bytes(32),
+        cid_bytes,
+        index_sets,
+    )._encode_transaction_data()
 
-    Checks payoutDenominator on-chain first — if the oracle hasn't resolved
-    the condition yet (common: Gamma API resolves before CTF on-chain),
-    adds to _REDEEM_QUEUE for retry on next cycle.
+
+def _auto_redeem(condition_id: str, side_won: str, asset: str = "") -> bool:
+    """Redeem vía Polymarket Relayer (proxy Magic / PROXY).
+
+    Autenticación al relayer (https://docs.polymarket.com/developers/builders/relayer-client):
+    1) RELAYER_API_KEY + RELAYER_API_KEY_ADDRESS (o POLYMARKET_RELAYER_API_KEY + _ADDRESS)
+       — creadas en Polymarket → Settings → API keys. Recomendado para cuentas normales.
+    2) POLY_BUILDER_API_KEY / POLY_BUILDER_SECRET / POLY_BUILDER_PASSPHRASE
+       — programa Builder (Settings → Builder). No uses las claves L2 del CLOB solas:
+       dan 401 invalid authorization si no son credenciales Builder.
+
+    Si payoutDenominator == 0 on-chain, encola reintento.
     """
     if DRY_RUN or not condition_id:
         return False
     try:
         from web3 import Web3
-        private_key  = os.getenv("POLYMARKET_PRIVATE_KEY", "")
+        private_key = os.getenv("POLYMARKET_PRIVATE_KEY", "")
         proxy_wallet = os.getenv("POLYMARKET_PROXY_WALLET", "")
         if not private_key or not proxy_wallet:
             return False
@@ -135,66 +151,133 @@ def _auto_redeem(condition_id: str, side_won: str, asset: str = "") -> bool:
         if w3 is None:
             console.print("[red][REDEEM] Sin RPC disponible[/red]")
             return False
-        acct = w3.eth.account.from_key(private_key)
 
         ctf = w3.eth.contract(address=Web3.to_checksum_address(CTF_ADDRESS), abi=_CTF_ABI)
         cid_bytes = bytes.fromhex(condition_id.replace("0x", ""))
 
-        # ── Check on-chain resolution before sending tx ───────────────────────
         payout_denom = ctf.functions.payoutDenominator(cid_bytes).call()
         if payout_denom == 0:
             console.print(f"[yellow][REDEEM] Condición no resuelta on-chain aún: {condition_id[:12]}... → reintentando en próximo ciclo[/yellow]")
-            # Add to retry queue if not already there
             already = any(q["condition_id"] == condition_id for q in _REDEEM_QUEUE)
             if not already:
                 import time as _time
                 _REDEEM_QUEUE.append({"condition_id": condition_id, "side": side_won, "asset": asset, "added_at": _time.time()})
             return False
 
-        # ── Check EOA has MATIC for gas ───────────────────────────────────────
-        matic = w3.eth.get_balance(acct.address)
-        if matic < w3.to_wei(0.005, "ether"):
-            console.print(f"[yellow][REDEEM] Sin MATIC suficiente ({w3.from_wei(matic,'ether'):.4f}). Deposita MATIC en {acct.address}[/yellow]")
+        try:
+            import requests as _relay_req
+            from py_builder_relayer_client.client import RelayClient
+            from py_builder_relayer_client.exceptions import RelayerApiException
+            from py_builder_relayer_client.models import RelayerTxType, Transaction
+            from py_builder_signing_sdk.config import BuilderConfig
+            from py_builder_signing_sdk.sdk_types import BuilderApiKeyCreds
+        except ImportError:
+            console.print(
+                "[red][REDEEM] Falta py-builder-relayer-client. Instala:\n"
+                "  pip install \"git+https://github.com/Polymarket/py-builder-relayer-client.git\"[/red]"
+            )
             return False
 
-        proxy = w3.eth.contract(address=Web3.to_checksum_address(proxy_wallet), abi=_PROXY_ABI)
+        def _relayer_key_pair() -> tuple[str, str]:
+            k = (os.getenv("POLYMARKET_RELAYER_API_KEY") or os.getenv("RELAYER_API_KEY") or "").strip()
+            a = (
+                os.getenv("POLYMARKET_RELAYER_API_KEY_ADDRESS")
+                or os.getenv("RELAYER_API_KEY_ADDRESS")
+                or ""
+            ).strip()
+            return k, a
 
-        # Redeem both indexSets [1, 2] — CTF handles gracefully if you hold 0 of one side
-        index_sets = [1, 2]
+        class _RelayClientFlexible(RelayClient):
+            """POST /submit con RELAYER_API_KEY o, si no, headers Builder HMAC."""
 
-        redeem_data = ctf.encode_abi(
-            "redeemPositions",
-            args=[
-                Web3.to_checksum_address(USDC_POLYGON),
-                b"\x00" * 32,
-                cid_bytes,
-                index_sets,
-            ]
+            def assert_builder_creds_needed(self):
+                k, addr = _relayer_key_pair()
+                if k and addr:
+                    return
+                super().assert_builder_creds_needed()
+
+            def _post_request(self, method: str, request_path: str, body: dict = None):
+                k, addr = _relayer_key_pair()
+                if k and addr:
+                    url = f"{self.relayer_url}{request_path}"
+                    resp = _relay_req.request(
+                        method,
+                        url,
+                        json=body,
+                        headers={
+                            "RELAYER_API_KEY": k,
+                            "RELAYER_API_KEY_ADDRESS": addr,
+                        },
+                        timeout=90,
+                    )
+                    if resp.status_code != 200:
+                        raise RelayerApiException(resp)
+                    try:
+                        return resp.json()
+                    except Exception:
+                        return resp.text
+                return super()._post_request(method, request_path, body)
+
+        rk, raddr = _relayer_key_pair()
+        builder_config = None
+        if not (rk and raddr):
+            api_key = os.getenv("POLY_BUILDER_API_KEY") or os.getenv("POLYMARKET_API_KEY", "")
+            api_sec = os.getenv("POLY_BUILDER_SECRET") or os.getenv("POLYMARKET_API_SECRET", "")
+            api_phr = os.getenv("POLY_BUILDER_PASSPHRASE") or os.getenv("POLYMARKET_PASSPHRASE", "")
+            if not (api_key and api_sec and api_phr):
+                console.print(
+                    "[yellow][REDEEM] Sin credenciales relayer: define "
+                    "POLYMARKET_RELAYER_API_KEY + POLYMARKET_RELAYER_API_KEY_ADDRESS (Settings→API), "
+                    "o POLY_BUILDER_* (Settings→Builder). Las claves CLOB solas suelen dar 401.[/yellow]"
+                )
+                return False
+            builder_config = BuilderConfig(
+                local_builder_creds=BuilderApiKeyCreds(key=api_key, secret=api_sec, passphrase=api_phr)
+            )
+
+        relayer_url = os.getenv("POLY5M_RELAYER_URL", os.getenv("POLYMARKET_RELAYER_URL", "https://relayer-v2.polymarket.com"))
+        tx_kind = os.getenv("POLY5M_RELAYER_TX_TYPE", "PROXY").strip().upper()
+        relay_tx_type = RelayerTxType.PROXY if tx_kind == "PROXY" else RelayerTxType.SAFE
+
+        relay = _RelayClientFlexible(
+            relayer_url=relayer_url,
+            chain_id=137,
+            private_key=private_key,
+            builder_config=builder_config,
+            relay_tx_type=relay_tx_type,
+            rpc_url=POLYGON_RPC,
         )
-        tx = proxy.functions.execute(
-            Web3.to_checksum_address(CTF_ADDRESS), 0, redeem_data
-        ).build_transaction({
-            "from":     acct.address,
-            "nonce":    w3.eth.get_transaction_count(acct.address),
-            "gas":      220_000,
-            "gasPrice": int(w3.eth.gas_price * 1.2),
-            "chainId":  137,
-        })
-        signed  = w3.eth.account.sign_transaction(tx, private_key)
-        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-        tx_hex  = tx_hash.hex()
-        console.print(f"[green][REDEEM] Claim enviado: {tx_hex[:20]}...[/green]")
+
+        index_sets = [1, 2]
+        redeem_data = _encode_redeem_calldata(USDC_POLYGON, condition_id, index_sets)
+        txn = Transaction(to=Web3.to_checksum_address(CTF_ADDRESS), data=redeem_data, value="0")
+
+        console.print(f"[dim][REDEEM] Enviando redeem via relayer ({tx_kind}) → CTF...[/dim]")
+        resp = relay.execute([txn], metadata=f"poly5m redeem {condition_id[:18]}")
+        receipt = resp.wait() if resp and resp.transaction_id else None
+        if not receipt:
+            console.print("[red][REDEEM] Relayer no confirmó el redeem (revisa estado en Polymarket / relayer)[/red]")
+            _tg(
+                f"⚠️ <b>AUTO-CLAIM</b> relayer sin confirmar\n"
+                f"<code>{condition_id[:16]}...</code>\n"
+                f"Reclama en https://polymarket.com/portfolio si sigue pendiente."
+            )
+            return False
+
+        tx_hash = receipt.get("transactionHash") or getattr(resp, "transaction_hash", None) or ""
+        hshort = (tx_hash[:20] + "…") if tx_hash else "—"
+        console.print(f"[green][REDEEM] Claim relayer OK: {hshort}[/green]")
         _tg(
-            f"💸 <b>AUTO-CLAIM enviado</b>\n"
+            f"💸 <b>AUTO-CLAIM (relayer)</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"📊 Mercado: {condition_id[:12]}...\n"
-            f"🔗 Tx: <code>{tx_hex[:20]}...</code>\n"
-            f"⛽ MATIC restante: {w3.from_wei(w3.eth.get_balance(acct.address), 'ether'):.4f}\n"
-            f"✅ USDC disponible en ~30 seg"
+            f"📊 <code>{condition_id[:16]}...</code>\n"
+            f"🔗 Tx: <b>{hshort}</b>\n"
+            f"✅ USDC en wallet proxy en breve"
         )
         return True
     except Exception as e:
         console.print(f"[red][REDEEM] Error: {e}[/red]")
+        _tg(f"⚠️ <b>AUTO-CLAIM error</b>\n<code>{str(e)[:200]}</code>\nhttps://polymarket.com/portfolio")
         return False
 
 
@@ -253,7 +336,7 @@ def _place_real_order(token_id: str, price: float, bet_size: float) -> dict | No
         client = _get_clob_client()
         if not client:
             raise RuntimeError("CLOB client no disponible")
-        shares  = max(5.0, round(bet_size / price, 2))   # mínimo 5 shares
+        shares  = max(MIN_SHARES, round(bet_size / price, 2))
         options = PartialCreateOrderOptions(tick_size="0.01", neg_risk=False)
         return client.create_and_post_order(
             OrderArgs(token_id=token_id, price=price, size=shares, side=BUY),
@@ -479,8 +562,8 @@ def record_bet(state: dict, market: dict, side: str, price: float, edge: float,
                analysis: dict, mid_price: float | None = None,
                fill_price: float | None = None,
                slippage: float | None = None, order_id: str | None = None) -> dict:
-    # Costo real = shares × price (mínimo 5 shares en Polymarket)
-    shares    = max(5.0, round(BET_SIZE / price, 2))
+    # Costo real = shares × price (floor POLY5M_MIN_SHARES)
+    shares    = max(MIN_SHARES, round(BET_SIZE / price, 2))
     real_cost = round(shares * price, 4)
     bet = {
         "timestamp":  datetime.now(timezone.utc).isoformat(),

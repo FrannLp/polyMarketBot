@@ -11,6 +11,7 @@ from datetime import datetime, date
 from config import (
     INITIAL_BALANCE, BET_SIZE, MAX_DAILY_BETS, DAILY_STOP_LOSS,
     CRYPTO_INITIAL_BALANCE, CRYPTO_BET_SIZE, CRYPTO_MAX_DAILY_BETS, CRYPTO_DAILY_STOP_LOSS,
+    WEATHER_INITIAL_BALANCE, WEATHER_BET_SIZE, WEATHER_MAX_DAILY_BETS, WEATHER_DAILY_STOP_LOSS,
 )
 
 STATE_FILE        = os.path.join(os.path.dirname(__file__), "logs", "state.json")
@@ -182,6 +183,169 @@ class RiskManager:
             "total_won":      self.state["total_won"],
             "win_rate":       self.win_rate,
             "bet_size":       BET_SIZE,
+        }
+
+    def get_history(self, last_n: int = 20) -> list[dict]:
+        return self.state["history"][-last_n:]
+
+
+# ─── Risk Manager para TEMPERATURA (balance $100, apuesta Kelly-sized) ────────
+
+WEATHER_STATE_FILE = os.path.join(os.path.dirname(__file__), "logs", "weather_state.json")
+
+
+def _load_weather_state() -> dict:
+    if os.path.exists(WEATHER_STATE_FILE):
+        try:
+            with open(WEATHER_STATE_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {
+        "balance":    WEATHER_INITIAL_BALANCE,
+        "initial":    WEATHER_INITIAL_BALANCE,
+        "bets_today": 0,
+        "loss_today": 0.0,
+        "total_bets": 0,
+        "total_won":  0,
+        "total_pnl":  0.0,
+        "last_reset": date.today().isoformat(),
+        "history":    [],
+    }
+
+
+def _save_weather_state(state: dict):
+    os.makedirs(os.path.dirname(WEATHER_STATE_FILE), exist_ok=True)
+    with open(WEATHER_STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2, default=str)
+
+
+class WeatherRiskManager:
+    """Risk manager for the temperature bot. Uses WEATHER_ config and weather_state.json."""
+
+    def __init__(self):
+        self.state = _load_weather_state()
+        self.state = _reset_daily_if_needed(self.state)
+        _save_weather_state(self.state)
+
+    @property
+    def balance(self) -> float:
+        return round(self.state["balance"], 4)
+
+    @property
+    def bets_today(self) -> int:
+        return self.state["bets_today"]
+
+    @property
+    def loss_today(self) -> float:
+        return round(self.state["loss_today"], 4)
+
+    @property
+    def total_bets(self) -> int:
+        return self.state["total_bets"]
+
+    @property
+    def win_rate(self) -> float:
+        if self.state["total_bets"] == 0:
+            return 0.0
+        return round(self.state["total_won"] / self.state["total_bets"], 4)
+
+    @property
+    def total_pnl(self) -> float:
+        return round(self.state["total_pnl"], 4)
+
+    def already_bet(self, market_id: str) -> bool:
+        return any(
+            b["market_id"] == market_id and b["status"] == "PENDING"
+            for b in self.state["history"]
+        )
+
+    def can_bet(self) -> tuple[bool, str]:
+        self.state = _reset_daily_if_needed(self.state)
+        if self.state["balance"] < WEATHER_BET_SIZE:
+            return False, f"Balance insuficiente: ${self.balance:.2f}"
+        if self.state["bets_today"] >= WEATHER_MAX_DAILY_BETS:
+            return False, f"Máximo apuestas diarias alcanzado ({WEATHER_MAX_DAILY_BETS})"
+        if self.state["loss_today"] >= WEATHER_DAILY_STOP_LOSS:
+            return False, f"Stop-loss diario activado: pérdida ${self.loss_today:.2f} >= ${WEATHER_DAILY_STOP_LOSS}"
+        return True, "OK"
+
+    def record_bet(self, signal: dict, dry_run: bool = True, bet_size: float = None) -> dict:
+        self.state = _reset_daily_if_needed(self.state)
+        if bet_size is None:
+            bet_size = WEATHER_BET_SIZE
+        price = signal["price_yes"] if signal["best_side"] == "YES" else signal["price_no"]
+        bet = {
+            "timestamp":       datetime.now().isoformat(),
+            "dry_run":         dry_run,
+            "market_id":       signal["market_id"],
+            "question":        signal["question"],
+            "city":            signal["city"],
+            "unit":            signal.get("unit", "C"),
+            "temp_threshold":  signal.get("temp_threshold"),
+            "condition":       signal.get("condition"),
+            "side":            signal["best_side"],
+            "bet_size":        round(bet_size, 4),
+            "price":           price,
+            "edge":            signal["best_edge"],
+            "ev":              signal.get("ev", 0),
+            "kelly_frac":      signal.get("kelly_frac", 0),
+            "prob_win":        signal.get("prob_win", 0),
+            "confidence":      signal["confidence"],
+            "primary_temp":    signal.get("primary_temp"),
+            "primary_source":  signal.get("primary_source"),
+            "copy_aligned":    signal["copy_aligned"],
+            "token_id_yes":    signal.get("token_id_yes"),
+            "token_id_no":     signal.get("token_id_no"),
+            "end_date":        signal["end_date"].isoformat() if signal.get("end_date") else None,
+            "days_to_resolve": signal.get("days_to_resolve"),
+            "status":          "PENDING",
+            "pnl":             None,
+            "close_reason":    None,
+        }
+        self.state["balance"]    -= bet_size
+        self.state["bets_today"] += 1
+        self.state["total_bets"] += 1
+        self.state["history"].append(bet)
+        _save_weather_state(self.state)
+        return bet
+
+    def record_result(self, market_id: str, won: bool, close_reason: str = "resolved") -> float | None:
+        for bet in reversed(self.state["history"]):
+            if bet["market_id"] == market_id and bet["status"] == "PENDING":
+                bet_size = bet["bet_size"]
+                price    = bet["price"]
+                if won:
+                    payout = bet_size / price
+                    pnl    = payout - bet_size
+                    self.state["balance"]   += payout
+                    self.state["total_won"] += 1
+                    bet["status"] = "WON"
+                else:
+                    pnl = -bet_size
+                    self.state["loss_today"] += bet_size
+                    bet["status"] = "LOST"
+                bet["pnl"]          = round(pnl, 4)
+                bet["close_reason"] = close_reason
+                self.state["total_pnl"] += pnl
+                _save_weather_state(self.state)
+                return pnl
+        return None
+
+    def summary(self) -> dict:
+        return {
+            "balance":    self.balance,
+            "initial":    self.state["initial"],
+            "pnl_total":  self.total_pnl,
+            "pnl_pct":    round((self.balance - self.state["initial"]) / self.state["initial"] * 100, 2),
+            "bets_today": self.bets_today,
+            "max_daily":  WEATHER_MAX_DAILY_BETS,
+            "loss_today": self.loss_today,
+            "stop_loss":  WEATHER_DAILY_STOP_LOSS,
+            "total_bets": self.total_bets,
+            "total_won":  self.state["total_won"],
+            "win_rate":   self.win_rate,
+            "bet_size":   WEATHER_BET_SIZE,
         }
 
     def get_history(self, last_n: int = 20) -> list[dict]:

@@ -14,7 +14,10 @@ dashboard/dist-server/
 
 # Logs y estado local
 logs/*.log
+logs/*.lock
 logs/cryp5m_state.json
+logs/poly5m_state.json
+logs/poly5m_notified.json
 logs/bot_live.log
 
 # Vault y datos sensibles

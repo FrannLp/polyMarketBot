@@ -49,6 +49,23 @@ CRYP5M_MAX_BETS_PER_CYCLE = int(os.getenv("CRYP5M_MAX_BETS_PER_CYCLE", "2"))
 TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN",   "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
+# ─── CONFIG BOT TEMPERATURA (weather bot upgraded) ───────────────────────────
+WEATHER_DRY_RUN         = os.getenv("WEATHER_DRY_RUN", os.getenv("DRY_RUN", "true")).lower() == "true"
+WEATHER_INITIAL_BALANCE = float(os.getenv("WEATHER_INITIAL_BALANCE", "100.00"))
+WEATHER_BET_SIZE        = float(os.getenv("WEATHER_BET_SIZE",        "1.00"))    # Kelly cap (max per bet)
+WEATHER_MIN_EV          = float(os.getenv("WEATHER_MIN_EV",          "0.05"))    # min Expected Value
+WEATHER_MAX_PRICE       = float(os.getenv("WEATHER_MAX_PRICE",       "0.45"))    # skip overpriced buckets
+WEATHER_MIN_VOLUME      = float(os.getenv("WEATHER_MIN_VOLUME",      "2000"))    # min market volume
+WEATHER_MIN_HOURS       = float(os.getenv("WEATHER_MIN_HOURS",       "2.0"))
+WEATHER_MAX_HOURS       = float(os.getenv("WEATHER_MAX_HOURS",       "72.0"))
+WEATHER_KELLY_FRACTION  = float(os.getenv("WEATHER_KELLY_FRACTION",  "0.25"))    # fractional Kelly (1/4)
+WEATHER_MAX_SLIPPAGE    = float(os.getenv("WEATHER_MAX_SLIPPAGE",    "0.03"))    # skip if spread > 3¢
+WEATHER_MAX_DAILY_BETS  = int(os.getenv("WEATHER_MAX_DAILY_BETS",    "5"))
+WEATHER_DAILY_STOP_LOSS = float(os.getenv("WEATHER_DAILY_STOP_LOSS", "10.00"))
+WEATHER_CALIBRATION_MIN = int(os.getenv("WEATHER_CALIBRATION_MIN",   "30"))      # trades before calibration
+WEATHER_STOP_LOSS_PCT   = float(os.getenv("WEATHER_STOP_LOSS_PCT",   "0.20"))    # close if -20% from entry
+VC_KEY                  = os.getenv("VC_KEY", "")                                 # Visual Crossing API key
+
 # ─── CREDENCIALES ────────────────────────────────────────────────────────────
 PRIVATE_KEY   = os.getenv("POLYMARKET_PRIVATE_KEY",  "")
 API_KEY       = os.getenv("POLYMARKET_API_KEY",       "")

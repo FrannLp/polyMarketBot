@@ -22,9 +22,26 @@ interface Account {
 }
 interface BotStatus {
   running: boolean; pid: number | null
-  live: { running: boolean; pid: number | null }
-  sim:  { running: boolean; pid: number | null }
-  poly: { running: boolean; pid: number | null }
+  live:    { running: boolean; pid: number | null }
+  sim:     { running: boolean; pid: number | null }
+  poly:    { running: boolean; pid: number | null }
+  weather: { running: boolean; pid: number | null }
+}
+
+interface WeatherBet {
+  timestamp: string; city: string; question: string
+  unit: string; temp_threshold: number | null; condition: string
+  side: string; price: number; bet_size: number
+  edge: number; ev: number; kelly_frac: number; prob_win: number
+  confidence: string; primary_temp: number | null; primary_source: string | null
+  status: 'PENDING' | 'WON' | 'LOST'; pnl: number | null
+  end_date: string | null; dry_run: boolean; market_id: string
+  close_reason: string | null
+}
+interface WeatherBotState {
+  balance: number; initial: number; total_pnl: number
+  total_bets: number; total_won: number; bets_today: number
+  loss_today: number; history: WeatherBet[]
 }
 
 const fmt  = (n: number) => `$${Math.abs(n).toFixed(2)}`
@@ -833,6 +850,192 @@ function TabSpread({ state }: { state: BotState | null }) {
           </table>
         </div>
       </div>
+    </>
+  )
+}
+
+// ── Tab Weather (Temperature Bot) ─────────────────────────────────────────────
+const CITY_EMOJI: Record<string, string> = {
+  'New York': '🗽', 'Chicago': '🌆', 'Miami': '🌴', 'Dallas': '🤠', 'Seattle': '☁️', 'Atlanta': '🍑',
+  'London': '🇬🇧', 'Paris': '🇫🇷', 'Munich': '🇩🇪', 'Ankara': '🇹🇷', 'Seoul': '🇰🇷',
+  'Tokyo': '🇯🇵', 'Shanghai': '🇨🇳', 'Singapore': '🇸🇬', 'Lucknow': '🇮🇳', 'Tel Aviv': '🇮🇱',
+  'Toronto': '🍁', 'Sao Paulo': '🇧🇷', 'Buenos Aires': '🇦🇷', 'Wellington': '🇳🇿',
+}
+const SOURCE_COLOR: Record<string, string> = { hrrr: '#38bdf8', ecmwf: '#a78bfa', metar: '#34d399' }
+
+function TabWeather({ state, botStatus, onToggle, toggling }: {
+  state: WeatherBotState | null
+  botStatus: BotStatus
+  onToggle: () => void
+  toggling: boolean
+}) {
+  const [actPage, setActPage] = useState(0)
+  const PAGE_SIZE = 10
+
+  if (!state) return <div className="loading">Sin datos del bot de temperatura</div>
+
+  const history   = state.history
+  const resolved  = history.filter(b => b.status === 'WON' || b.status === 'LOST')
+  const totalBets = resolved.length
+  const totalWon  = resolved.filter(b => b.status === 'WON').length
+  const totalPnl  = history.reduce((s, b) => s + (b.pnl ?? 0), 0)
+  const winRate   = totalBets > 0 ? Math.round((totalWon / totalBets) * 100) : null
+  const pnlColor  = totalPnl >= 0 ? 'green' : 'red'
+  const pctVsInit = state.initial > 0 ? (((state.balance - state.initial) / state.initial) * 100).toFixed(1) : '0'
+  const openBets  = history.filter(b => b.status === 'PENDING').length
+  const running   = botStatus.weather?.running ?? false
+
+  type AItem = { key: string; node: React.ReactNode; ts: number }
+  const items: AItem[] = []
+
+  ;[...history].reverse().forEach((b, i) => {
+    const emoji    = CITY_EMOJI[b.city] ?? '🌡'
+    const cond     = b.condition === 'gte' ? '>=' : '<='
+    const thresh   = b.temp_threshold != null ? `${cond}${b.temp_threshold.toFixed(0)}°${b.unit ?? 'C'}` : ''
+    const pTemp    = b.primary_temp != null ? `${b.primary_temp.toFixed(1)}°` : ''
+    const src      = b.primary_source ?? ''
+    const srcColor = SOURCE_COLOR[src] ?? '#94a3b8'
+    const payout   = b.pnl != null ? b.pnl + b.bet_size : b.bet_size / (b.price ?? 1)
+    const ts       = new Date(b.timestamp).getTime()
+    const icon     = b.status === 'WON' ? 'claimed' : b.status === 'LOST' ? 'lost' : 'pending'
+    const symbol   = b.status === 'WON' ? '✓' : b.status === 'LOST' ? '✗' : '⏳'
+    const valueNode = b.status === 'WON'
+      ? <div className="act-value pos">+{fmt(payout)}</div>
+      : b.status === 'PENDING'
+        ? <div className="act-value neu">En curso</div>
+        : <div className="act-value neg">-{fmt(b.bet_size)}</div>
+
+    items.push({ key: `w-${i}`, ts, node: (
+      <div className="activity-row">
+        <div className={`act-icon ${icon}`}>{symbol}</div>
+        <div className="asset-icon" style={{ background: '#0f766e', fontSize: 14 }}>{emoji}</div>
+        <div className="act-info">
+          <div className="act-name" style={{ fontSize: 12 }}>
+            <strong>{b.city}</strong>
+            {thresh && <span style={{ color: '#94a3b8', marginLeft: 6 }}>{thresh}</span>}
+          </div>
+          <div className="act-meta">
+            <span className={`act-badge ${b.side === 'YES' ? 'up' : 'down'}`}>
+              {b.side === 'YES' ? '✅' : '❌'} {b.side}
+            </span>
+            <span className="act-shares">{(b.price * 100).toFixed(0)}¢</span>
+            {b.ev != null && <span style={{ color: b.ev >= 0 ? '#4ade80' : '#f87171', marginLeft: 6, fontSize: 11 }}>EV {b.ev >= 0 ? '+' : ''}{b.ev.toFixed(2)}</span>}
+            {pTemp && <span style={{ color: srcColor, marginLeft: 6, fontSize: 11 }}>{pTemp} {src.toUpperCase()}</span>}
+            <span style={{ color: '#64748b', marginLeft: 6, fontSize: 11 }}>{b.confidence}</span>
+          </div>
+        </div>
+        <div className="act-right">
+          {valueNode}
+          <div className="act-time">{timeAgo(b.timestamp)}</div>
+        </div>
+      </div>
+    )})
+  })
+
+  items.sort((a, b) => b.ts - a.ts)
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
+  const safePage   = Math.min(actPage, totalPages - 1)
+  const pageItems  = items.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
+
+  return (
+    <>
+      {/* Info banner */}
+      <div style={{ background: '#0d2a1f', border: '1px solid #10b981', borderRadius: 10, padding: '10px 16px', marginBottom: 16, fontSize: 12, color: '#6ee7b7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <strong style={{ color: '#34d399' }}>🌡 Weather Bot v2</strong> — ECMWF + HRRR (US) + METAR · EV filter · Kelly sizing · Auto-resolve
+        </div>
+        <button
+          className={`bot-toggle ${running ? 'bot-poly-on' : 'bot-poly-off'}`}
+          onClick={onToggle}
+          disabled={toggling}
+          style={{ fontSize: 12, padding: '5px 12px' }}
+        >
+          {toggling ? '...' : running ? `⏹ Detener (PID ${botStatus.weather?.pid})` : '▶ Iniciar'}
+        </button>
+      </div>
+
+      {/* Cards */}
+      <div className="cards">
+        <div className="card">
+          <div className="label">Balance Weather Bot</div>
+          <div className="value" style={{ color: '#34d399' }}>{fmt(state.balance)}</div>
+          <div className="sub">Inicial: {fmt(state.initial)} · {pctVsInit}%</div>
+        </div>
+        <div className="card">
+          <div className="label">Win Rate</div>
+          <div className={`value ${winRate === null ? '' : winRate >= 50 ? 'green' : 'red'}`}>
+            {winRate !== null ? `${winRate}%` : '—'}
+          </div>
+          <div className="sub">{totalWon}/{totalBets} resueltos</div>
+        </div>
+        <div className="card">
+          <div className="label">PnL total</div>
+          <div className={`value ${pnlColor}`}>{totalPnl >= 0 ? '+' : ''}{fmt(totalPnl)}</div>
+          <div className="sub">vs ${state.initial.toFixed(0)} inicial</div>
+        </div>
+        <div className="card">
+          <div className="label">Posiciones abiertas</div>
+          <div className="value">{openBets}</div>
+          <div className="sub">Hoy: {state.bets_today} · stop ${state.loss_today.toFixed(2)}</div>
+        </div>
+      </div>
+
+      {/* Activity feed */}
+      <div className="section">
+        <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Actividad (Temperatura)</span>
+          <span style={{ fontSize: 11, color: '#475569', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
+            {items.length} eventos · pág {safePage + 1}/{totalPages}
+          </span>
+        </div>
+        <div className="activity-feed">
+          {items.length === 0
+            ? <div className="loading">Sin apuestas aún — bot buscando oportunidades de temperatura con EV ≥ 5%</div>
+            : pageItems.map((item, idx) => <div key={item.key + idx}>{item.node}</div>)
+          }
+        </div>
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 10 }}>
+            <button className="refresh-btn" onClick={() => setActPage(p => Math.max(0, p - 1))} disabled={safePage === 0}>← Anterior</button>
+            <button className="refresh-btn" onClick={() => setActPage(p => Math.min(totalPages - 1, p + 1))} disabled={safePage === totalPages - 1}>Siguiente →</button>
+          </div>
+        )}
+      </div>
+
+      {/* Pending positions table */}
+      {history.filter(b => b.status === 'PENDING').length > 0 && (
+        <div className="section">
+          <div className="section-title">Posiciones abiertas</div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Ciudad</th><th>Condición</th><th>Lado</th><th>Precio</th><th>Apuesta</th><th>EV</th><th>Pronóst.</th><th>Cierra</th></tr>
+              </thead>
+              <tbody>
+                {history.filter(b => b.status === 'PENDING').map((b, i) => {
+                  const cond = b.condition === 'gte' ? '>=' : '<='
+                  const thresh = b.temp_threshold != null ? `${cond}${b.temp_threshold.toFixed(0)}°${b.unit ?? 'C'}` : '—'
+                  const srcColor = SOURCE_COLOR[b.primary_source ?? ''] ?? '#94a3b8'
+                  return (
+                    <tr key={i}>
+                      <td><strong>{CITY_EMOJI[b.city] ?? '🌡'} {b.city}</strong></td>
+                      <td style={{ color: '#94a3b8' }}>{thresh}</td>
+                      <td><span className={`act-badge ${b.side === 'YES' ? 'up' : 'down'}`}>{b.side === 'YES' ? '✅' : '❌'} {b.side}</span></td>
+                      <td style={{ fontFamily: 'monospace' }}>{(b.price * 100).toFixed(0)}¢</td>
+                      <td style={{ color: '#facc15' }}>${b.bet_size.toFixed(2)}</td>
+                      <td style={{ color: (b.ev ?? 0) >= 0 ? '#4ade80' : '#f87171', fontFamily: 'monospace' }}>{b.ev != null ? `${b.ev >= 0 ? '+' : ''}${b.ev.toFixed(2)}` : '—'}</td>
+                      <td style={{ color: srcColor, fontSize: 11 }}>
+                        {b.primary_temp != null ? `${b.primary_temp.toFixed(1)}° ` : ''}{(b.primary_source ?? '').toUpperCase()}
+                      </td>
+                      <td style={{ color: '#facc15', fontSize: 11 }}>{b.end_date ? timeLeft(b.end_date) : '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </>
   )
 }

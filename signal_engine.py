@@ -1,80 +1,129 @@
 """
 signal_engine.py
 ================
-Combina datos del mercado + clima real + copy trading.
-Genera señales de apuesta con edge calculado.
-Filtros estrictos para minimo riesgo.
+Generates weather betting signals with:
+- 3 forecast sources (ECMWF, HRRR, METAR)
+- Expected Value filter (min_ev from config)
+- Fractional Kelly Criterion for position sizing
+- Calibration-aware probability (sigma per city/source)
+- Copy trading alignment
 """
 
-from datetime import datetime, timezone, date
+import json
+import os
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from market_scraper  import fetch_weather_markets
 from weather_analyzer import analyze_temperature
 from trader_tracker   import get_copy_signals
-from config import MIN_EDGE, BET_SIZE
+from config import (
+    MIN_EDGE,                    # legacy fallback
+    WEATHER_MIN_EV,
+    WEATHER_MAX_PRICE,
+    WEATHER_MIN_VOLUME,
+    WEATHER_KELLY_FRACTION,
+    WEATHER_BET_SIZE,
+    WEATHER_MAX_SLIPPAGE,
+    GAMMA_API,
+)
 
-MAX_MARKETS_TO_ANALYZE = 40   # solo top 40 por volumen
+MAX_MARKETS_TO_ANALYZE = 50
+CALIBRATION_FILE = os.path.join(os.path.dirname(__file__), "data", "calibration.json")
 
 
-def kelly_fraction(prob: float, odds: float, fraction: float = 0.25) -> float:
+def _load_calibration() -> dict:
+    """Load calibration data (MAE sigma per city/source) if available."""
+    try:
+        if os.path.exists(CALIBRATION_FILE):
+            with open(CALIBRATION_FILE, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+
+def calc_ev(p: float, price: float) -> float:
     """
-    Kelly fraccionario (1/4 Kelly por seguridad).
-    prob  = probabilidad real de ganar (0-1)
-    odds  = pago por $1 apostado (ej: si precio=0.3 -> odds = 1/0.3 - 1 = 2.33)
+    Expected Value per dollar bet.
+    EV = p × (1/price − 1) − (1 − p)
+    Positive EV = profitable in the long run.
     """
-    if odds <= 0 or prob <= 0:
+    if price <= 0 or price >= 1 or p <= 0:
         return 0.0
-    b = odds
-    q = 1 - prob
-    kelly = (b * prob - q) / b
-    return max(0.0, kelly * fraction)
+    return round(p * (1.0 / price - 1.0) - (1.0 - p), 4)
+
+
+def calc_kelly(p: float, price: float, kelly_frac: float = None) -> float:
+    """
+    Fractional Kelly: what fraction of balance to bet.
+    f* = (p × b − (1 − p)) / b  ×  kelly_fraction
+    Returns fraction 0-1 (multiply by balance for dollar amount).
+    """
+    if kelly_frac is None:
+        kelly_frac = WEATHER_KELLY_FRACTION
+    if price <= 0 or price >= 1 or p <= 0:
+        return 0.0
+    b = 1.0 / price - 1.0      # net odds per dollar bet
+    f = (p * b - (1.0 - p)) / b
+    return round(min(max(0.0, f) * kelly_frac, 1.0), 4)
 
 
 def generate_signals(verbose: bool = True) -> list[dict]:
     """
-    Flujo completo:
-    1. Scrapear mercados de temperatura
-    2. Analizar clima real con Open-Meteo
-    3. Calcular edge
-    4. Enriquecer con copy trading
-    5. Filtrar y rankear señales
+    Full pipeline:
+    1. Fetch weather markets from Polymarket Gamma API
+    2. Query 3 forecast sources in parallel (ECMWF, HRRR, METAR)
+    3. Calculate EV and Kelly for each market
+    4. Filter: EV >= WEATHER_MIN_EV, price <= WEATHER_MAX_PRICE, volume >= WEATHER_MIN_VOLUME
+    5. Enrich with copy trading
+    6. Sort by EV
 
-    Retorna lista de señales ordenadas por edge.
+    Returns list of signal dicts ordered by EV (best first).
     """
     if verbose:
         print("[signal_engine] Buscando mercados de temperatura en Polymarket...")
 
     markets = fetch_weather_markets(max_pages=3)
 
-    if verbose:
-        print(f"[signal_engine] {len(markets)} mercados encontrados, analizando top {MAX_MARKETS_TO_ANALYZE}...")
-
     if not markets:
         return []
 
-    # Solo top N por volumen
+    # Filter by volume and take top N
+    markets = [m for m in markets if m.get("volume", 0) >= WEATHER_MIN_VOLUME]
     markets = markets[:MAX_MARKETS_TO_ANALYZE]
 
-    # Deduplicar llamadas al clima: misma ciudad+fecha = mismo resultado
+    if verbose:
+        print(f"[signal_engine] {len(markets)} mercados (vol>={WEATHER_MIN_VOLUME:.0f}), analizando...")
+
+    calibration = _load_calibration()
+
+    # ── Weather analysis in parallel ──────────────────────────────────────────
     weather_cache: dict[str, dict] = {}
 
     def get_weather(mkt):
         end_date = mkt.get("end_date")
         if not end_date:
             return mkt, None
+        horizon_h = mkt.get("days_to_resolve", 1) * 24
         key = f"{mkt['lat']},{mkt['lon']},{end_date.date().isoformat()}"
         if key not in weather_cache:
             weather_cache[key] = analyze_temperature(
-                mkt["lat"], mkt["lon"],
-                mkt["temp_threshold"], mkt["condition"],
-                end_date.date(),
+                lat=mkt["lat"],
+                lon=mkt["lon"],
+                temp_threshold=mkt["temp_threshold"],
+                condition=mkt["condition"],
+                target_date=end_date.date(),
+                city=mkt["city"],
+                unit=mkt.get("unit", "C"),
+                horizon_hours=horizon_h,
+                calibration=calibration,
             )
         return mkt, weather_cache[key]
 
-    # Obtener clima en paralelo (max 8 threads)
-    weather_results = {}
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = {executor.submit(get_weather, m): m for m in markets}
+    weather_results: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futures = {ex.submit(get_weather, m): m for m in markets}
         done = 0
         for future in as_completed(futures):
             mkt, w = future.result()
@@ -84,144 +133,158 @@ def generate_signals(verbose: bool = True) -> list[dict]:
                 print(f"[signal_engine] Clima: {done}/{len(markets)}")
 
     if verbose:
-        print(f"[signal_engine] Clima obtenido para {len(weather_results)} mercados")
+        print(f"[signal_engine] Clima OK para {len(weather_results)} mercados")
 
-    # Obtener señales de copy trading
+    # ── Copy trading signals ───────────────────────────────────────────────────
     copy_signals_map: dict[str, dict] = {}
     try:
-        copy_sigs = get_copy_signals(max_traders=10)
-        for cs in copy_sigs:
+        for cs in get_copy_signals(max_traders=10):
             copy_signals_map[cs["market_id"]] = cs
         if verbose:
-            print(f"[signal_engine] {len(copy_signals_map)} señales de copy trading")
+            print(f"[signal_engine] {len(copy_signals_map)} señales copy trading")
     except Exception as e:
         if verbose:
             print(f"[signal_engine] Copy trading no disponible: {e}")
 
+    # ── Build signals ──────────────────────────────────────────────────────────
     signals = []
     now = datetime.now(timezone.utc)
 
     for mkt in markets:
-        # Solo mercados que resuelven en <= 7 días
         days = mkt.get("days_to_resolve")
-        if days is None or days < 0 or days > 7:
+        if days is None or days < 0:
             continue
 
         end_date = mkt.get("end_date")
         if not end_date:
             continue
 
-        target_date = end_date.date()
+        # Hours to resolution check
+        hours_left = (end_date - now).total_seconds() / 3600
+        from config import WEATHER_MIN_HOURS, WEATHER_MAX_HOURS
+        if hours_left < WEATHER_MIN_HOURS or hours_left > WEATHER_MAX_HOURS:
+            continue
 
-        # Obtener clima del cache paralelo
         weather = weather_results.get(mkt["market_id"])
         if not weather:
             continue
 
-        prob_real = weather["prob_real"]
-        confidence = weather["confidence"]
+        # Skip LOW confidence (no reliable forecast)
+        if weather["confidence"] == "LOW":
+            continue
 
-        # Determinar la mejor apuesta: YES o NO
+        prob_real = weather["prob_real"]
         price_yes = mkt["price_yes"]
         price_no  = mkt["price_no"]
 
-        # Edge = diferencia entre probabilidad real y precio del mercado
-        edge_yes = prob_real - price_yes
-        edge_no  = (1 - prob_real) - price_no
+        # Skip overpriced buckets
+        if price_yes > WEATHER_MAX_PRICE and price_no > WEATHER_MAX_PRICE:
+            continue
+
+        # ── EV for each side ──────────────────────────────────────────────────
+        ev_yes = calc_ev(prob_real,       price_yes)
+        ev_no  = calc_ev(1.0 - prob_real, price_no)
 
         best_side  = None
-        best_edge  = 0.0
+        best_ev    = 0.0
         best_price = 0.5
+        prob_win   = 0.5
 
-        if edge_yes >= edge_no and edge_yes > 0:
+        if ev_yes >= ev_no and ev_yes > 0 and price_yes <= WEATHER_MAX_PRICE:
             best_side  = "YES"
-            best_edge  = edge_yes
+            best_ev    = ev_yes
             best_price = price_yes
-        elif edge_no > edge_yes and edge_no > 0:
+            prob_win   = prob_real
+        elif ev_no > ev_yes and ev_no > 0 and price_no <= WEATHER_MAX_PRICE:
             best_side  = "NO"
-            best_edge  = edge_no
+            best_ev    = ev_no
             best_price = price_no
+            prob_win   = 1.0 - prob_real
 
-        if best_side is None or best_edge < MIN_EDGE:
+        # Filter: must meet min EV threshold
+        if best_side is None or best_ev < WEATHER_MIN_EV:
             continue
 
-        # Filtrar mercados con precios extremos (sin liquidez real)
-        if best_price < 0.05 or best_price > 0.95:
+        # Spread check (skip thin markets)
+        spread = mkt.get("spread")
+        if spread and spread > WEATHER_MAX_SLIPPAGE:
             continue
 
-        # Probabilidad de ganar según el lado elegido
-        prob_win = prob_real if best_side == "YES" else (1 - prob_real)
-
-        # Solo apostar si hay probabilidad alta
-        if prob_win < 0.65:
+        # Must have reasonable win probability
+        if prob_win < 0.55:
             continue
 
-        # Solo mercados con confianza MEDIUM o HIGH
-        if confidence == "LOW":
-            continue
+        # ── Kelly sizing ──────────────────────────────────────────────────────
+        kelly_frac = calc_kelly(prob_win, best_price)
 
-        # Calcular Kelly
-        odds = (1.0 / best_price) - 1.0
-        kelly = kelly_fraction(prob_win, odds)
+        # ── Edge (legacy compat) ──────────────────────────────────────────────
+        best_edge = (prob_real - price_yes) if best_side == "YES" else ((1 - prob_real) - price_no)
 
-        # Check copy trading
-        copy_info = copy_signals_map.get(mkt["market_id"])
-        copy_bonus = 0.0
+        # ── Copy trading ──────────────────────────────────────────────────────
+        copy_info    = copy_signals_map.get(mkt["market_id"])
+        copy_bonus   = 0.0
         copy_aligned = False
-        if copy_info:
-            if copy_info["copy_side"] == best_side:
-                copy_aligned = True
-                copy_bonus = 0.03 * copy_info["consensus_pct"]  # bonus hasta +3%
+        if copy_info and copy_info.get("copy_side") == best_side:
+            copy_aligned = True
+            copy_bonus   = 0.03 * copy_info.get("consensus_pct", 0)
 
-        # Score final
-        score = best_edge + copy_bonus + (0.01 if confidence == "HIGH" else 0)
+        # ── Score ─────────────────────────────────────────────────────────────
+        score = best_ev + copy_bonus + (0.01 if weather["confidence"] == "HIGH" else 0)
 
         signals.append({
-            # Mercado
-            "market_id":     mkt["market_id"],
-            "slug":          mkt["slug"],
-            "question":      mkt["question"],
-            "city":          mkt["city"].title(),
-            "temp_threshold": mkt["temp_threshold"],
-            "condition":     mkt["condition"],
+            # Market
+            "market_id":       mkt["market_id"],
+            "slug":            mkt["slug"],
+            "question":        mkt["question"],
+            "city":            mkt["city"].title(),
+            "unit":            mkt.get("unit", "C"),
+            "temp_threshold":  mkt["temp_threshold"],
+            "condition":       mkt["condition"],
             "days_to_resolve": days,
-            "target_date":   target_date.isoformat(),
-            "volume":        mkt["volume"],
+            "hours_left":      round(hours_left, 1),
+            "target_date":     end_date.date().isoformat(),
+            "end_date":        end_date,
+            "volume":          mkt["volume"],
+            "token_id_yes":    mkt.get("token_id_yes"),
+            "token_id_no":     mkt.get("token_id_no"),
+            "spread":          spread,
 
-            # Precios del mercado
-            "price_yes":     price_yes,
-            "price_no":      price_no,
+            # Market prices
+            "price_yes":       price_yes,
+            "price_no":        price_no,
 
-            # Analisis clima
-            "prob_real":     prob_real,
-            "temp_avg_max":  weather["temp_avg_max"],
-            "temp_avg_min":  weather["temp_avg_min"],
-            "models_agree":  weather["models_agree"],
-            "models_total":  weather["models_total"],
-            "confidence":    confidence,
+            # Forecast analysis
+            "prob_real":       prob_real,
+            "temp_avg_max":    weather.get("temp_avg_max"),
+            "temp_avg_min":    weather.get("temp_avg_min"),
+            "primary_temp":    weather.get("primary_temp"),
+            "primary_source":  weather.get("primary_source"),
+            "models_agree":    weather["models_agree"],
+            "models_total":    weather["models_total"],
+            "confidence":      weather["confidence"],
+            "sigma":           weather.get("sigma"),
+            "ecmwf_temp":      (weather.get("ecmwf") or {}).get("temp_max"),
+            "hrrr_temp":       (weather.get("hrrr") or {}).get("temp_max"),
+            "metar_obs":       (weather.get("metar") or {}).get("temp_obs"),
 
-            # Señal
-            "best_side":     best_side,
-            "best_edge":     round(best_edge, 4),
-            "prob_win":      round(prob_win, 4),
-            "kelly":         round(kelly, 4),
-            "bet_size":      BET_SIZE,   # fijo $0.50
+            # Signal
+            "best_side":       best_side,
+            "best_edge":       round(best_edge, 4),
+            "ev":              round(best_ev, 4),
+            "prob_win":        round(prob_win, 4),
+            "kelly_frac":      kelly_frac,
 
             # Copy trading
-            "copy_aligned":  copy_aligned,
-            "copy_info":     copy_info,
+            "copy_aligned":    copy_aligned,
+            "copy_info":       copy_info,
 
-            # Score para ranking
-            "score":         round(score, 4),
+            # Score for ranking
+            "score":           round(score, 4),
         })
 
-    # Ordenar: primero copy aligned + HIGH confidence, luego por score
+    # Sort: copy aligned + HIGH first, then by EV
     signals.sort(
-        key=lambda x: (
-            int(x["copy_aligned"]),
-            int(x["confidence"] == "HIGH"),
-            x["score"],
-        ),
+        key=lambda x: (int(x["copy_aligned"]), int(x["confidence"] == "HIGH"), x["ev"]),
         reverse=True,
     )
 
