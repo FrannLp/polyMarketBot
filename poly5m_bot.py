@@ -143,7 +143,16 @@ def _auto_redeem(condition_id: str, side_won: str) -> bool:
         })
         signed  = w3.eth.account.sign_transaction(tx, private_key)
         tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-        console.print(f"[green][REDEEM] Claim enviado: {tx_hash.hex()[:20]}...[/green]")
+        tx_hex  = tx_hash.hex()
+        console.print(f"[green][REDEEM] Claim enviado: {tx_hex[:20]}...[/green]")
+        _tg(
+            f"💸 <b>AUTO-CLAIM enviado</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📊 Mercado: {condition_id[:12]}...\n"
+            f"🔗 Tx: <code>{tx_hex[:20]}...</code>\n"
+            f"⛽ MATIC restante: {w3.from_wei(w3.eth.get_balance(acct.address), 'ether'):.4f}\n"
+            f"✅ USDC disponible en ~30 seg"
+        )
         return True
     except Exception as e:
         console.print(f"[red][REDEEM] Error: {e}[/red]")
