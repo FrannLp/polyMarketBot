@@ -90,15 +90,39 @@ _CTF_ABI = [
      "name":"redeemPositions","outputs":[],"stateMutability":"nonpayable","type":"function"},
     {"inputs":[{"name":"account","type":"address"},{"name":"id","type":"uint256"}],
      "name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+    {"inputs":[{"name":"","type":"bytes32"}],
+     "name":"payoutDenominator","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
 ]
 _PROXY_ABI = [
     {"inputs":[{"name":"to","type":"address"},{"name":"value","type":"uint256"},{"name":"data","type":"bytes"}],
      "name":"execute","outputs":[{"name":"","type":"bytes"}],"stateMutability":"payable","type":"function"},
 ]
 
-def _auto_redeem(condition_id: str, side_won: str) -> bool:
-    """Llama CTF.redeemPositions via proxy wallet. Requiere MATIC en EOA."""
-    if DRY_RUN:
+# Queue of pending redeems: list of {"condition_id": str, "side": str, "asset": str, "added_at": float}
+_REDEEM_QUEUE: list[dict] = []
+
+def _get_w3():
+    """Connect to Polygon via fallback RPC chain."""
+    from web3 import Web3
+    _rpcs = [POLYGON_RPC, "https://polygon.llamarpc.com", "https://rpc.ankr.com/polygon/", "https://1rpc.io/matic"]
+    for _rpc in _rpcs:
+        try:
+            _w3 = Web3(Web3.HTTPProvider(_rpc, request_kwargs={"timeout": 8}))
+            _w3.eth.block_number
+            return _w3
+        except Exception:
+            continue
+    return None
+
+
+def _auto_redeem(condition_id: str, side_won: str, asset: str = "") -> bool:
+    """Llama CTF.redeemPositions via proxy wallet.
+
+    Checks payoutDenominator on-chain first — if the oracle hasn't resolved
+    the condition yet (common: Gamma API resolves before CTF on-chain),
+    adds to _REDEEM_QUEUE for retry on next cycle.
+    """
+    if DRY_RUN or not condition_id:
         return False
     try:
         from web3 import Web3
@@ -107,36 +131,37 @@ def _auto_redeem(condition_id: str, side_won: str) -> bool:
         if not private_key or not proxy_wallet:
             return False
 
-        # Try multiple RPCs in case one rate-limits
-        _rpcs = [POLYGON_RPC, "https://polygon.llamarpc.com", "https://rpc.ankr.com/polygon/", "https://1rpc.io/matic"]
-        w3 = None
-        for _rpc in _rpcs:
-            try:
-                _w3 = Web3(Web3.HTTPProvider(_rpc, request_kwargs={"timeout": 8}))
-                _w3.eth.block_number  # quick connectivity test
-                w3 = _w3
-                break
-            except Exception:
-                continue
+        w3 = _get_w3()
         if w3 is None:
             console.print("[red][REDEEM] Sin RPC disponible[/red]")
             return False
         acct = w3.eth.account.from_key(private_key)
 
-        # Check EOA has MATIC for gas
+        ctf = w3.eth.contract(address=Web3.to_checksum_address(CTF_ADDRESS), abi=_CTF_ABI)
+        cid_bytes = bytes.fromhex(condition_id.replace("0x", ""))
+
+        # ── Check on-chain resolution before sending tx ───────────────────────
+        payout_denom = ctf.functions.payoutDenominator(cid_bytes).call()
+        if payout_denom == 0:
+            console.print(f"[yellow][REDEEM] Condición no resuelta on-chain aún: {condition_id[:12]}... → reintentando en próximo ciclo[/yellow]")
+            # Add to retry queue if not already there
+            already = any(q["condition_id"] == condition_id for q in _REDEEM_QUEUE)
+            if not already:
+                import time as _time
+                _REDEEM_QUEUE.append({"condition_id": condition_id, "side": side_won, "asset": asset, "added_at": _time.time()})
+            return False
+
+        # ── Check EOA has MATIC for gas ───────────────────────────────────────
         matic = w3.eth.get_balance(acct.address)
         if matic < w3.to_wei(0.005, "ether"):
             console.print(f"[yellow][REDEEM] Sin MATIC suficiente ({w3.from_wei(matic,'ether'):.4f}). Deposita MATIC en {acct.address}[/yellow]")
             return False
 
-        ctf   = w3.eth.contract(address=Web3.to_checksum_address(CTF_ADDRESS), abi=_CTF_ABI)
-        proxy = w3.eth.contract(address=Web3.to_checksum_address(proxy_wallet),  abi=_PROXY_ABI)
+        proxy = w3.eth.contract(address=Web3.to_checksum_address(proxy_wallet), abi=_PROXY_ABI)
 
-        cid_bytes = bytes.fromhex(condition_id.replace("0x", ""))
-        # UP won = outcome index 0 = indexSet 1  |  DOWN won = outcome index 1 = indexSet 2
-        index_sets = [1] if side_won == "UP" else [2]
+        # Redeem both indexSets [1, 2] — CTF handles gracefully if you hold 0 of one side
+        index_sets = [1, 2]
 
-        # web3.py v7: use encode_abi (encodeABI removed)
         redeem_data = ctf.encode_abi(
             "redeemPositions",
             args=[
@@ -151,7 +176,7 @@ def _auto_redeem(condition_id: str, side_won: str) -> bool:
         ).build_transaction({
             "from":     acct.address,
             "nonce":    w3.eth.get_transaction_count(acct.address),
-            "gas":      180_000,
+            "gas":      220_000,
             "gasPrice": int(w3.eth.gas_price * 1.2),
             "chainId":  137,
         })
@@ -171,6 +196,24 @@ def _auto_redeem(condition_id: str, side_won: str) -> bool:
     except Exception as e:
         console.print(f"[red][REDEEM] Error: {e}[/red]")
         return False
+
+
+def _drain_redeem_queue() -> None:
+    """Retry pending redeems from previous cycles (on-chain resolution delayed)."""
+    if DRY_RUN or not _REDEEM_QUEUE:
+        return
+    import time as _time
+    still_pending = []
+    for item in list(_REDEEM_QUEUE):
+        age_h = (_time.time() - item["added_at"]) / 3600
+        if age_h > 48:
+            console.print(f"[dim][REDEEM] Abandonando redeem de {item['condition_id'][:12]}... (48h sin resolverse on-chain)[/dim]")
+            continue
+        ok = _auto_redeem(item["condition_id"], item["side"], item.get("asset", ""))
+        if not ok:
+            still_pending.append(item)
+    _REDEEM_QUEUE.clear()
+    _REDEEM_QUEUE.extend(still_pending)
 
 
 # ── CLOB client (solo para LIVE) ──────────────────────────────────────────────
@@ -569,7 +612,7 @@ def check_resolutions(state: dict) -> int:
                 console.print(f"  [green]POLY WON[/green]  [{BOT_NAME}] {bet['asset']} {bet['side']} +${pnl:.2f}")
                 _notify_resolved(bet, pnl)
                 # Auto-claim: redeem winning tokens → USDC
-                _auto_redeem(bet.get("market_id", ""), bet["side"])
+                _auto_redeem(bet.get("market_id", ""), bet["side"], bet.get("asset", ""))
             else:
                 pnl = -bet_size
                 bet["status"] = "LOST"
@@ -667,6 +710,7 @@ def run_cycle():
     state = _reset_daily(state)
 
     check_resolutions(state)
+    _drain_redeem_queue()   # retry any redeems pending on-chain resolution
     print_dashboard(state)
 
     ok, reason = can_bet(state)
@@ -824,6 +868,7 @@ def _resolve_job():
     n = check_resolutions(state)
     if n:
         _save(state)
+    _drain_redeem_queue()
 
 
 def main():
