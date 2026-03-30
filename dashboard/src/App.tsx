@@ -78,20 +78,15 @@ const ASSET_COLOR: Record<string, string> = {
   BTC: '#f7931a', ETH: '#627eea', SOL: '#9945ff', XRP: '#00aae4',
   DOGE: '#c2a633', HYPE: '#e040fb',
 }
-// Convert ET time range in question string to browser local time
-// e.g. "BTC Up or Down - March 29, 8:55PM-9:00PM ET" → "6:55PM-7:00PM MDT"
-function etRangeToLocal(question: string): string {
-  const m = question.match(/(\w+\s+\d+),\s*(\d+:\d+(?:AM|PM))-(\d+:\d+(?:AM|PM))\s*ET/i)
-  if (!m) return ''
-  const [, datePart, startET, endET] = m
-  const toLocal = (t: string) => {
-    try {
-      const d = new Date(`${datePart}, 2026 ${t} GMT-0400`) // EDT = UTC-4
-      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
-    } catch { return '' }
-  }
-  const s = toLocal(startET), e = toLocal(endET)
-  return s && e ? `${s} – ${e}` : ''
+// Compute local time range from end_date (UTC ISO) — start = end - 5min
+function localTimeRange(endDateStr: string | null | undefined): string {
+  if (!endDateStr) return ''
+  try {
+    const end   = new Date(endDateStr)
+    const start = new Date(end.getTime() - 5 * 60 * 1000)
+    const fmt   = (d: Date) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
+    return `${fmt(start)} – ${fmt(end)}`
+  } catch { return '' }
 }
 
 function timeAgo(ts: string): string {
@@ -204,7 +199,7 @@ function TabReal({ account, markets, state, polyState }: { account: Account | nu
           const shares = b.price > 0 ? (b.bet_size / b.price).toFixed(1) : '—'
           const payout = b.pnl != null ? b.pnl + b.bet_size : b.bet_size / (b.price ?? 1)
           const shortQ   = (b.question || `${b.asset} Up or Down`).slice(0, 60)
-          const localTime = etRangeToLocal(b.question || '')
+          const localTime = localTimeRange(b.end_date)
           const ts     = new Date(b.timestamp).getTime()
           const badge  = <span className={`act-badge ${isUp ? 'up' : 'down'}`}>{isUp ? '▲' : '▼'} {b.side} {cents}¢</span>
 
