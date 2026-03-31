@@ -1,18 +1,18 @@
 # PolyMarket Bot
 
-Suite de bots de trading automatizado para [Polymarket](https://polymarket.com). Cada bot opera en mercados distintos con su propia estrategia.
+Automated trading bot suite for [Polymarket](https://polymarket.com). Each bot trades different markets using its own strategy.
 
 ---
 
 ## Bots
 
-### 1. Bot Clima — `bot.py`
-Apuesta en mercados de **temperatura y clima** (ej. "¿Estará por encima de X°F en Nueva York?").
+### 1. Weather Bot — `bot.py`
+Trades **temperature and weather** markets (e.g. "Will it be above X°F in New York?").
 
-- Señales: análisis de pronósticos meteorológicos vs precio de mercado
-- Configuración: variables `BOT_NAME`, `BET_SIZE`, `MIN_EDGE`, `MAX_DAILY_BETS`, `DAILY_STOP_LOSS` en `.env`
+- Signals: weather forecast analysis vs market price
+- Config: `BOT_NAME`, `BET_SIZE`, `MIN_EDGE`, `MAX_DAILY_BETS`, `DAILY_STOP_LOSS` in `.env`
 - Log: `logs/bot_sim.log`
-- Estado: `logs/state.json`
+- State: `logs/state.json`
 
 ```bash
 python bot.py
@@ -20,13 +20,13 @@ python bot.py
 
 ---
 
-### 2. Bot Crypto General — `crypto_bot.py`
-Apuesta en mercados cripto de **mayor plazo** (ej. "¿BTC por encima de $90k el viernes?").
+### 2. General Crypto Bot — `crypto_bot.py`
+Trades **longer-duration** crypto markets (e.g. "Will BTC be above $90k on Friday?").
 
-- Señales: MACD, RSI, VWAP, CVD, momentum sobre candles de Binance
-- Configuración: variables `CRYPTO_*` en `.env`
+- Signals: MACD, RSI, VWAP, CVD, momentum on Binance candles
+- Config: `CRYPTO_*` variables in `.env`
 - Log: `logs/crypto_bot.log`
-- Estado: `logs/crypto_state.json`
+- State: `logs/crypto_state.json`
 
 ```bash
 python crypto_bot.py
@@ -34,14 +34,14 @@ python crypto_bot.py
 
 ---
 
-### 3. Bot 5 Minutos (Binance) — `cryp_signal_5minutes.py`
-Apuesta en mercados **UP/DOWN de 5 minutos** usando señales técnicas de Binance (BTC, ETH, SOL, XRP, DOGE, HYPE).
+### 3. 5-Minute Bot (Binance) — `cryp_signal_5minutes.py`
+Trades **5-minute UP/DOWN** markets using Binance-based technical signals (BTC, ETH, SOL, XRP, DOGE, HYPE).
 
-- Señales: MACD(3/15/3), RSI(14), VWAP, CVD divergence, window momentum, funding rate
-- Configuración: variables `CRYP5M_*` en `.env`
-- Ciclo: cada 5 minutos
+- Signals: MACD(3/15/3), RSI(14), VWAP, CVD divergence, window momentum, funding rate
+- Config: `CRYP5M_*` variables in `.env`
+- Cycle: every 5 minutes
 - Log: `logs/bot_sim.log`
-- Estado: `logs/cryp5m_state.json`
+- State: `logs/cryp5m_state.json`
 
 ```bash
 python cryp_signal_5minutes.py
@@ -49,16 +49,16 @@ python cryp_signal_5minutes.py
 
 ---
 
-### 4. Bot Poly-5M (LIVE) — `poly5m_bot.py` ⭐ activo
-Apuesta en mercados **UP/DOWN de 5 minutos** usando **solo datos del CLOB de Polymarket** (sin Binance).
+### 4. Poly-5M Bot (LIVE) — `poly5m_bot.py` ⭐ active
+Trades **5-minute UP/DOWN** markets using **Polymarket CLOB data only** (no Binance).
 
-- Señales: demand imbalance (bids UP vs bids DOWN), price deviation
-- Auto-claim: reclama automáticamente las posiciones ganadoras vía `redeemPositions` en Polygon
-- Notificaciones: Telegram en cada apuesta, resultado y resumen cada 10 min
-- Configuración: variables `POLY5M_*` en `.env`
-- Ciclo: apuestas cada 5 min, resoluciones cada 30 seg
+- Signals: demand imbalance (UP bids vs DOWN bids), price deviation
+- Auto-claim: automatically claims winning positions through `redeemPositions` on Polygon
+- Notifications: Telegram on each bet, result, and 10-minute summary
+- Config: `POLY5M_*` variables in `.env`
+- Cycle: bets every 5 minutes, resolution checks every 30 seconds
 - Log: `logs/poly5m_bot.log`
-- Estado: `logs/poly5m_state.json`
+- State: `logs/poly5m_state.json`
 
 ```bash
 PYTHONUTF8=1 PYTHONIOENCODING=utf-8 python poly5m_bot.py >> logs/poly5m_bot.log 2>&1
@@ -68,7 +68,7 @@ PYTHONUTF8=1 PYTHONIOENCODING=utf-8 python poly5m_bot.py >> logs/poly5m_bot.log 
 
 ## Dashboard
 
-Interfaz web para monitorear actividad en tiempo real.
+Web UI to monitor activity in real time.
 
 ```bash
 cd dashboard && npm run dev
@@ -77,32 +77,32 @@ cd dashboard && npm run dev
 ```
 
 Tabs:
-- **Polymarket Real** — balance y bets LIVE de la wallet
-- **Simulación** — misma UI con datos del bot en modo dry-run
+- **Polymarket Real** — wallet balance and LIVE bets
+- **Simulation** — same UI with dry-run bot data
 
 ---
 
-## Configuración (`.env`)
+## Configuration (`.env`)
 
-Copia `.env.example` y rellena tus credenciales:
+Copy `.env.example` and fill your credentials:
 
-| Variable | Descripción |
+| Variable | Description |
 |----------|-------------|
-| `POLYMARKET_PRIVATE_KEY` | Clave privada de tu wallet |
-| `POLYMARKET_PROXY_WALLET` | Dirección del proxy wallet de Polymarket |
-| `POLYMARKET_API_KEY` / `SECRET` / `PASSPHRASE` | Credenciales CLOB API |
-| `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` | Notificaciones Telegram |
-| `POLY5M_DRY_RUN` | `true` = simulación, `false` = LIVE |
-| `POLY5M_BET_SIZE` | Tamaño de apuesta en USDC |
-| `POLY5M_MIN_EDGE` | Edge mínimo requerido (ej. `0.06` = 6%) |
+| `POLYMARKET_PRIVATE_KEY` | Your wallet private key |
+| `POLYMARKET_PROXY_WALLET` | Your Polymarket proxy wallet address |
+| `POLYMARKET_API_KEY` / `SECRET` / `PASSPHRASE` | CLOB API credentials |
+| `TELEGRAM_TOKEN` / `TELEGRAM_CHAT_ID` | Telegram notifications |
+| `POLY5M_DRY_RUN` | `true` = simulation, `false` = LIVE |
+| `POLY5M_BET_SIZE` | Bet size in USDC |
+| `POLY5M_MIN_EDGE` | Minimum required edge (e.g. `0.06` = 6%) |
 
-> ⚠️ **NUNCA** pongas `DRY_RUN=false` sin antes validar 200+ trades simulados con WR ≥ 56%.
+> ⚠️ **NEVER** set `DRY_RUN=false` before validating 200+ simulated trades with WR ≥ 56%.
 
 ---
 
-## Reset del bot
+## Reset the Bot
 
 ```bash
-python reset_bot.py --balance 25      # reset completo
-python reset_bot.py --resume          # solo resetea contadores diarios
+python reset_bot.py --balance 25      # full reset
+python reset_bot.py --resume          # reset daily counters only
 ```
