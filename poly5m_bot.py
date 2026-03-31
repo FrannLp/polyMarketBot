@@ -81,6 +81,14 @@ MIN_EDGE_PER_ASSET: dict[str, float] = {
     "HYPE": float(os.getenv("POLY5M_MIN_EDGE_HYPE", "99.0")),   # disabled: 33% WR
 }
 
+# Per-asset bet sizes (fallback: POLY5M_BET_SIZE)
+BET_SIZE_BTC   = float(os.getenv("POLY5M_BET_SIZE_BTC", os.getenv("POLY5M_BET_SIZE", "2.50")))
+BET_SIZE_OTHER = float(os.getenv("POLY5M_BET_SIZE_OTHER", os.getenv("POLY5M_BET_SIZE", "2.50")))
+
+
+def _bet_size_for_asset(asset: str) -> float:
+    return BET_SIZE_BTC if asset == "BTC" else BET_SIZE_OTHER
+
 # ── Auto-redeem (claim USDC de posiciones ganadoras) ──────────────────────────
 POLYGON_RPC  = os.getenv("POLYGON_RPC", "https://polygon.llamarpc.com")
 CTF_ADDRESS  = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
@@ -153,15 +161,34 @@ def _auto_redeem(condition_id: str, side_won: str, asset: str = "") -> bool:
             return False
 
         ctf = w3.eth.contract(address=Web3.to_checksum_address(CTF_ADDRESS), abi=_CTF_ABI)
-        cid_bytes = bytes.fromhex(condition_id.replace("0x", ""))
+        cid_hex = condition_id.replace("0x", "")
+        if len(cid_hex) != 64:
+            console.print(f"[yellow][REDEEM] condition_id inválido (len={len(cid_hex)}): {condition_id[:20]}...[/yellow]")
+            return False
+        cid_bytes = bytes.fromhex(cid_hex)
 
-        payout_denom = ctf.functions.payoutDenominator(cid_bytes).call()
-        if payout_denom == 0:
-            console.print(f"[yellow][REDEEM] Condición no resuelta on-chain aún: {condition_id[:12]}... → reintentando en próximo ciclo[/yellow]")
+        def _enqueue_retry() -> None:
             already = any(q["condition_id"] == condition_id for q in _REDEEM_QUEUE)
             if not already:
                 import time as _time
-                _REDEEM_QUEUE.append({"condition_id": condition_id, "side": side_won, "asset": asset, "added_at": _time.time()})
+                _REDEEM_QUEUE.append(
+                    {"condition_id": condition_id, "side": side_won, "asset": asset, "added_at": _time.time()}
+                )
+
+        try:
+            payout_denom = ctf.functions.payoutDenominator(cid_bytes).call()
+        except Exception as e:
+            # Some RPCs intermittently return empty payloads for eth_call; retry next cycle.
+            console.print(
+                f"[yellow][REDEEM] No se pudo leer payoutDenominator para {condition_id[:12]}... "
+                f"({str(e)[:140]}) → reintentando en próximo ciclo[/yellow]"
+            )
+            _enqueue_retry()
+            return False
+
+        if payout_denom == 0:
+            console.print(f"[yellow][REDEEM] Condición no resuelta on-chain aún: {condition_id[:12]}... → reintentando en próximo ciclo[/yellow]")
+            _enqueue_retry()
             return False
 
         try:
@@ -390,7 +417,7 @@ def _save_notified(keys: set) -> None:
 
 def _notify_bet(market_id: str, asset: str, side: str, price: float,
                 edge: float, prob_win: float, question: str,
-                bid_up: float, bid_down: float) -> None:
+                bid_up: float, bid_down: float, bet_size: float) -> None:
     key = f"{BOT_NAME}:{market_id}:{side}"
     notified = _load_notified()
     if key in notified:
@@ -399,14 +426,14 @@ def _notify_bet(market_id: str, asset: str, side: str, price: float,
     _save_notified(notified)
     mode    = f"🟡 SIM [{BOT_NAME}]" if DRY_RUN else f"🟢 REAL [{BOT_NAME}]"
     side_ic = "⬆️" if side == "UP" else "⬇️"
-    gain    = round(BET_SIZE / price, 2)
+    gain    = round(bet_size / price, 2)
     _tg(
         f"{mode} — <b>5M ENTRADA (PM Signal)</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"📊 Asset: <b>{asset}</b>\n"
         f"📌 {question[:60]}\n"
         f"{side_ic} Lado: <b>{side}</b>\n"
-        f"💰 Monto: <b>${BET_SIZE:.2f}</b>\n"
+        f"💰 Monto: <b>${bet_size:.2f}</b>\n"
         f"📈 Precio: {price:.2f}  |  Edge: {edge*100:.1f}%\n"
         f"🎯 Ganancia potencial: <b>${gain:.2f}</b>\n"
         f"🔮 Prob win: {prob_win:.1%}"
@@ -548,8 +575,9 @@ def _reset_daily(state: dict) -> dict:
     return state
 
 
-def can_bet(state: dict) -> tuple[bool, str]:
-    if state["balance"] < BET_SIZE:
+def can_bet(state: dict, bet_size: float | None = None) -> tuple[bool, str]:
+    required = bet_size if bet_size is not None else min(BET_SIZE_BTC, BET_SIZE_OTHER)
+    if state["balance"] < required:
         return False, f"Balance insuficiente ${state['balance']:.2f}"
     if state["bets_today"] >= MAX_DAILY_BETS:
         return False, f"Limite diario ({MAX_DAILY_BETS})"
@@ -561,9 +589,12 @@ def can_bet(state: dict) -> tuple[bool, str]:
 def record_bet(state: dict, market: dict, side: str, price: float, edge: float,
                analysis: dict, mid_price: float | None = None,
                fill_price: float | None = None,
-               slippage: float | None = None, order_id: str | None = None) -> dict:
+               slippage: float | None = None, order_id: str | None = None,
+               target_bet_size: float | None = None) -> dict:
+    if target_bet_size is None:
+        target_bet_size = _bet_size_for_asset(market.get("asset", ""))
     # Costo real = shares × price (floor POLY5M_MIN_SHARES)
-    shares    = max(MIN_SHARES, round(BET_SIZE / price, 2))
+    shares    = max(MIN_SHARES, round(target_bet_size / price, 2))
     real_cost = round(shares * price, 4)
     bet = {
         "timestamp":  datetime.now(timezone.utc).isoformat(),
@@ -715,7 +746,7 @@ def print_banner():
     console.rule(f"[bold magenta]POLY 5M BOT[/bold magenta] — {mode} — [dim]Solo Polymarket CLOB[/dim]")
     console.print(
         f"  Assets: {' - '.join(ASSETS)}  |  "
-        f"Bet: ${BET_SIZE}  Min edge: {MIN_EDGE:.0%}  "
+        f"Bet BTC: ${BET_SIZE_BTC:.2f} / Otros: ${BET_SIZE_OTHER:.2f}  Min edge: {MIN_EDGE:.0%}  "
         f"Min book: ${MIN_BOOK_DEPTH:.0f}  Balance inicial: ${INITIAL_BALANCE}"
     )
     console.print()
@@ -862,7 +893,8 @@ def run_cycle():
     for sig in signals:
         if bets_placed >= MAX_PER_CYCLE:
             break
-        ok_now, reason = can_bet(state)
+        this_bet_size = _bet_size_for_asset(sig["asset"])
+        ok_now, reason = can_bet(state, this_bet_size)
         if not ok_now:
             console.print(f"[red]STOP:[/red] {reason}")
             break
@@ -909,7 +941,7 @@ def run_cycle():
         else:
             # LIVE: place real order at ask price (limit order, immediate fill)
             order_price = ask_price if ask_price else mid_price
-            order_resp  = _place_real_order(token_id, order_price, BET_SIZE)
+            order_resp  = _place_real_order(token_id, order_price, this_bet_size)
             if order_resp is None:
                 console.print(f"[red][LIVE] Error colocando orden para {sig['asset']} {side} — skipping[/red]")
                 continue
@@ -920,8 +952,9 @@ def run_cycle():
 
         bet  = record_bet(state, mkt, side, price, edge, a,
                           mid_price=mid_price,
-                          fill_price=fill_price, slippage=slippage, order_id=order_id)
-        gain = BET_SIZE / price
+                          fill_price=fill_price, slippage=slippage, order_id=order_id,
+                          target_bet_size=this_bet_size)
+        gain = bet["bet_size"] / price
 
         slip_str = f"  Slip: {slippage:+.4f}" if slippage is not None else ""
         fill_str = f"  Fill: {fill_price:.3f}" if fill_price is not None else ""
@@ -937,7 +970,7 @@ def run_cycle():
         _notify_bet(
             mkt["market_id"], sig["asset"], side, price, edge,
             prob_win, mkt.get("question", ""),
-            a.get("bid_up", 0), a.get("bid_down", 0),
+            a.get("bid_up", 0), a.get("bid_down", 0), this_bet_size,
         )
         bets_placed += 1
 
